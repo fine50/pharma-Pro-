@@ -20,11 +20,10 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app); 
 const db = getFirestore(app);
 
-// [تثبيت الجلسة] إجبار المتصفح على تذكر المستخدم للأبد
+// تثبيت الجلسة
 (async () => {
-    try {
-        await setPersistence(auth, browserLocalPersistence);
-    } catch (e) { console.error("Persistence Warning:", e); }
+    try { await setPersistence(auth, browserLocalPersistence); } 
+    catch (e) { console.error("Persistence Error:", e); }
 })();
 
 // ============================================================
@@ -65,12 +64,11 @@ function hideLoader() {
 }
 
 // ============================================================
-// 3. المنطق الذكي للتحقق من الصفحات (Access Control)
+// 3. التحكم في الوصول
 // ============================================================
 const isDashPage = document.getElementById('ordersList'); 
 const isLoginPage = document.getElementById('sellerLoginBtn'); 
 
-// إذا لم نكن في صفحات تتطلب التحقق، نخفي اللودر
 if (!isDashPage && !isLoginPage) hideLoader();
 
 onAuthStateChanged(auth, (user) => {
@@ -86,7 +84,7 @@ onAuthStateChanged(auth, (user) => {
 });
 
 // ============================================================
-// 4. دوال عامة (Global Helpers)
+// 4. دوال عامة
 // ============================================================
 window.getStarRatingHTML = (rating) => {
     const r = parseFloat(rating) || 0;
@@ -114,7 +112,6 @@ window.markRequestAsTaken = async (requestId) => {
     } catch (e) { console.error(e); }
 };
 
-// --- منطق التقييم ---
 let currentReviewPharmaId = null; 
 let currentRating = 0;
 
@@ -356,21 +353,19 @@ if (trackBtn) {
 }
 
 // ============================================================
-// 7. منطق دخول وتسجيل الصيدلي (المُعدّل لحل المشكلة)
+// 7. منطق دخول وتسجيل الصيدلي
 // ============================================================
 const sellerLoginBtn = document.getElementById('sellerLoginBtn');
 if (sellerLoginBtn) {
-    // === تسجيل الدخول ===
+    // تسجيل الدخول
     sellerLoginBtn.addEventListener('click', async () => {
         const email = document.getElementById('loginEmail').value;
         const pass = document.getElementById('loginPassword').value;
         if (!email || !pass) return alert("أدخل البيانات");
-        
         sellerLoginBtn.innerText = "جاري الدخول...";
         try {
             await setPersistence(auth, browserLocalPersistence);
             await signInWithEmailAndPassword(auth, email, pass);
-            // سيقوم onAuthStateChanged بالتوجيه
         } catch (e) {
             console.error(e);
             alert("خطأ في الدخول: تأكد من الإيميل وكلمة السر");
@@ -378,7 +373,7 @@ if (sellerLoginBtn) {
         }
     });
 
-    // === إنشاء حساب جديد (تم الإصلاح هنا) ===
+    // إنشاء حساب جديد
     const authBtn = document.getElementById('authBtn');
     if (authBtn) {
         authBtn.addEventListener('click', async () => {
@@ -392,13 +387,10 @@ if (sellerLoginBtn) {
             if(!shopName || !phone || !gpsLink) return alert("جميع البيانات مطلوبة");
             
             btn.innerText = "جاري الإنشاء...";
-            btn.disabled = true; // منع الضغط المتكرر
+            btn.disabled = true;
             
             try {
-                // 1. إنشاء المستخدم في Authentication
                 const cred = await createUserWithEmailAndPassword(auth, email, pass);
-                
-                // 2. حفظ البيانات في Firestore وانتظار اكتمال العملية
                 await setDoc(doc(db, "pharmacists", cred.user.uid), {
                     shopName, phone, email, gpsLink, 
                     wilaya: "موقع GPS", 
@@ -407,7 +399,6 @@ if (sellerLoginBtn) {
                     createdAt: serverTimestamp()
                 });
 
-                // 3. النجاح! التوجيه مباشرة للداشبورد (بدون Reload لتجنب خطأ عدم العثور)
                 alert("تم التسجيل بنجاح!");
                 window.location.href = "dash.html";
                 
@@ -420,7 +411,7 @@ if (sellerLoginBtn) {
         });
     }
 
-    // === استعادة كلمة السر ===
+    // استعادة كلمة السر
     const btnSendReset = document.getElementById('btnSendReset');
     if (btnSendReset) {
         btnSendReset.addEventListener('click', async () => {
@@ -438,7 +429,7 @@ if (sellerLoginBtn) {
 }
 
 // ============================================================
-// 8. منطق لوحة تحكم الصيدلي (تم إزالة الطرد التلقائي)
+// 8. منطق لوحة تحكم الصيدلي (تمت إضافة الصبر/Retry Logic)
 // ============================================================
 let currentPharmaId = null;
 let currentPharmaData = null;
@@ -448,22 +439,37 @@ window.logoutNow = async () => {
     window.location.href = "seller-login.html";
 };
 
+// دالة مساعدة لانتظار البيانات في حال تأخر التسجيل
+async function getPharmaDataWithRetry(uid, retries = 3) {
+    const pharmaRef = doc(db, "pharmacists", uid);
+    let docSnap = await getDoc(pharmaRef);
+    
+    // إذا لم يجد البيانات، ينتظر ثانية ويحاول مرة أخرى
+    for (let i = 0; i < retries; i++) {
+        if (docSnap.exists()) return docSnap; // وجد البيانات! ممتاز
+        console.log(`Trying to fetch data... Attempt ${i+1}`);
+        await new Promise(r => setTimeout(r, 1000)); // انتظر 1 ثانية
+        docSnap = await getDoc(pharmaRef); // حاول مجدداً
+    }
+    return docSnap;
+}
+
 async function initDashboard(user) {
     currentPharmaId = user.uid;
     const pharmaRef = doc(db, "pharmacists", user.uid);
     
     try {
-        const docSnap = await getDoc(pharmaRef);
+        // [تعديل هام] استخدام دالة البحث المتكرر بدلاً من البحث مرة واحدة
+        const docSnap = await getPharmaDataWithRetry(user.uid);
         
-        // --- التعديل الجوهري هنا: منع الخروج التلقائي عند الخطأ ---
         if (!docSnap.exists()) {
             hideLoader();
-            // بدلاً من الطرد، نعرض رسالة خطأ مع زر محاولة
+            // في حالة نادرة جداً جداً إذا فشل بعد 3 محاولات، نعرض الخطأ
             document.body.innerHTML = `
                 <div style="height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; font-family:sans-serif;">
-                    <h2>⚠️ لم يتم العثور على بيانات الحساب</h2>
-                    <p style="color:gray;">قد يكون السبب ضعف في الإنترنت أو أن التسجيل لم يكتمل.</p>
-                    <button onclick="window.location.reload()" style="margin-top:20px; padding:10px 20px; background:#16a34a; color:white; border:none; border-radius:8px; cursor:pointer;">🔄 إعادة المحاولة</button>
+                    <h2>⚠️ جاري تجهيز حسابك...</h2>
+                    <p style="color:gray;">تم إنشاء الحساب، ولكن البيانات تأخرت قليلاً.</p>
+                    <button onclick="window.location.reload()" style="margin-top:20px; padding:10px 20px; background:#16a34a; color:white; border:none; border-radius:8px; cursor:pointer;">🔄 تحديث الصفحة الآن</button>
                     <button onclick="window.logoutNow()" style="margin-top:10px; padding:10px; color:red; background:none; border:none; cursor:pointer;">تسجيل خروج</button>
                 </div>`;
             return;
@@ -495,7 +501,7 @@ async function initDashboard(user) {
             return;
         }
         
-        // بدء الداشبورد
+        // تشغيل الداشبورد
         onSnapshot(pharmaRef, (snap) => {
             if (snap.exists()) {
                 currentPharmaData = snap.data();
@@ -518,7 +524,6 @@ async function initDashboard(user) {
     } catch (error) {
         console.error("Dashboard Error:", error);
         hideLoader();
-        // عند حدوث خطأ في الاتصال، لا نطرد المستخدم
         alert("حدث خطأ في الاتصال بالبيانات، يرجى تحديث الصفحة.");
     }
 }
