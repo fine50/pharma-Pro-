@@ -20,7 +20,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app); 
 const db = getFirestore(app);
 
-// ضمان حفظ الجلسة محلياً لتجنب الطرد عند التحديث
+// [تصحيح] تثبيت الجلسة لمنع خروج الأدمن أو الصيدلي عند تحديث الصفحة
 setPersistence(auth, browserLocalPersistence).catch((error) => {
     console.error("Persistence Error:", error);
 });
@@ -72,35 +72,95 @@ function hideLoader() {
 // 3. المنطق الذكي للتحقق من الصفحات (Access Control)
 // ============================================================
 
-const isDashPage = document.getElementById('ordersList'); 
-const isLoginPage = document.getElementById('sellerLoginBtn'); 
+// تحديد الصفحة الحالية
+const isDashPage = document.getElementById('ordersList'); // dash.html
+const isLoginPage = document.getElementById('sellerLoginBtn'); // seller-login.html
+const isAdminPage = document.getElementById('adminPendingList'); // admin.html (يجب إضافة هذا ID في صفحة الادمن)
 
-// إذا لم نكن في صفحات تتطلب صلاحيات (مثل صفحة المريض)، نخفي التحميل فوراً
-if (!isDashPage && !isLoginPage) {
+// إذا لم تكن في صفحات تتطلب تحميل بيانات، اخفِ اللودر فوراً
+if (!isDashPage && !isLoginPage && !isAdminPage) {
     hideLoader();
 }
 
-onAuthStateChanged(auth, (user) => {
-    // الحالة 1: المستخدم مسجل دخول وهو في صفحة تسجيل الدخول -> نرسله للداشبورد
-    if (isLoginPage && user) {
-        window.location.replace("dash.html"); // استخدام replace لمنع الرجوع للخلف
+// مراقبة المصادقة
+onAuthStateChanged(auth, async (user) => {
+    // 1. التعامل مع صفحة الدخول
+    if (isLoginPage) {
+        if (user) {
+            // المستخدم مسجل، نفحص هل هو أدمن أم صيدلي وهل هو مفعل
+            await checkUserStatus(user);
+        } else {
+            hideLoader();
+        }
         return;
     }
 
-    // الحالة 2: المستخدم في الداشبورد
+    // 2. التعامل مع صفحة الداشبورد
     if (isDashPage) {
         if (user) {
-            initDashboard(user); // ابدأ بتحميل البيانات
+            // التأكد من أن الحساب مفعل (isVerified)
+            const docSnap = await getDoc(doc(db, "pharmacists", user.uid));
+            if (docSnap.exists()) {
+                if (docSnap.data().isVerified === true) {
+                    initDashboard(user); // الحساب مفعل -> حمل الداشبورد
+                } else {
+                    // الحساب غير مفعل
+                    alert("⛔ حسابك قيد المراجعة من قبل الإدارة.\nيرجى الانتظار حتى يتم التأكد من بيانات الصيدلية.");
+                    await signOut(auth);
+                    window.location.href = "seller-login.html";
+                }
+            } else {
+                // مسجل دخول لكن لا يملك وثيقة (ربما أدمن دخل بالخطأ للداشبورد أو حساب محذوف)
+                 await signOut(auth);
+                 window.location.href = "seller-login.html";
+            }
         } else {
-            // غير مسجل؟ اطرده فوراً
-            window.location.replace("seller-login.html");
+            window.location.href = "seller-login.html";
         }
-    } else {
-        // في أي صفحة أخرى (مثل صفحة المريض)، إذا لم نكن في وضع "تحميل"، نخفي اللودر
-        // تم التعامل مع هذا في الأعلى، لكن للتأكيد في حال تغيرت الحالة
-        if (isLoginPage && !user) hideLoader();
+    }
+
+    // 3. التعامل مع صفحة الأدمن (admin.html)
+    if (isAdminPage) {
+        if (user) {
+            // يمكن هنا إضافة شرط خاص بإيميل الأدمن إذا أردت
+            initAdminPanel();
+        } else {
+            window.location.href = "seller-login.html";
+        }
     }
 });
+
+// دالة مساعدة لفحص الحالة عند محاولة الدخول
+async function checkUserStatus(user) {
+    // إذا كان الإيميل هو إيميل الأدمن، نرسله لصفحة الأدمن
+    // [ملاحظة] استبدل admin@gmail.com بإيميل الأدمن الخاص بك
+    if (user.email === "admin@gmail.com") {
+        window.location.href = "admin.html";
+        return;
+    }
+
+    const docRef = doc(db, "pharmacists", user.uid);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+        if (docSnap.data().isVerified === true) {
+            window.location.href = "dash.html";
+        } else {
+            alert("⏳ تم استلام طلبك، ولكن الحساب قيد المراجعة.\nسيقوم فريق الدعم بتفعيل حسابك بعد التحقق من البيانات.");
+            await signOut(auth); // تسجيل خروج ليبقى في صفحة الدخول
+            hideLoader();
+        }
+    } else {
+        // حالة خاصة: إذا كان أدمن
+        if(document.location.href.includes("admin.html")) {
+             // لا تفعل شيئاً، سيتم التعامل معه في onAuthStateChanged
+        } else {
+             // مستخدم غريب
+             await signOut(auth);
+             hideLoader();
+        }
+    }
+}
 
 // ============================================================
 // 4. دوال عامة (Helpers)
@@ -123,19 +183,12 @@ window.markRequestAsTaken = async (requestId) => {
     try {
         const reqRef = doc(db, "requests", requestId);
         const docSnap = await getDoc(reqRef);
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (!data.expiresAt) {
-                const expiryDate = new Date();
-                expiryDate.setHours(expiryDate.getHours() + 48); 
-                await updateDoc(reqRef, { 
-                    expiresAt: expiryDate,
-                    interactionStarted: true 
-                });
-                console.log("Timer started");
-            }
+        if (docSnap.exists() && !docSnap.data().expiresAt) {
+            const expiryDate = new Date();
+            expiryDate.setHours(expiryDate.getHours() + 48); 
+            await updateDoc(reqRef, { expiresAt: expiryDate, interactionStarted: true });
         }
-    } catch (e) { console.error("Error updating status:", e); }
+    } catch (e) { console.error(e); }
 };
 
 let currentReviewPharmaId = null; 
@@ -174,9 +227,7 @@ window.setStars = (n) => {
 window.submitReview = async () => {
     if(currentRating === 0) return alert("الرجاء اختيار عدد النجوم");
     const text = document.getElementById('reviewText').value;
-    const btn = document.querySelector('#reviewModal button[onclick="window.submitReview()"]') || document.querySelector('#reviewModal button.btn-attention');
-    
-    if(!currentReviewPharmaId) return alert("خطأ في معرف الصيدلي");
+    const btn = document.querySelector('#reviewModal button.btn-attention');
     if(btn) { btn.innerText = "جاري الإرسال..."; btn.disabled = true; }
 
     try {
@@ -185,10 +236,9 @@ window.submitReview = async () => {
             const pharmaDoc = await transaction.get(pharmaRef);
             if (!pharmaDoc.exists()) throw "Pharmacist not found";
             const data = pharmaDoc.data();
-            const oldRating = data.rating || 0;
-            const oldCount = data.reviewCount || 0;
-            const newCount = oldCount + 1;
-            const newRating = ((oldRating * oldCount) + currentRating) / newCount;
+            const newCount = (data.reviewCount || 0) + 1;
+            const newRating = ((data.rating || 0) * (data.reviewCount || 0) + currentRating) / newCount;
+
             transaction.update(pharmaRef, { rating: newRating, reviewCount: newCount });
             const newReviewRef = doc(collection(db, "reviews"));
             transaction.set(newReviewRef, {
@@ -201,12 +251,8 @@ window.submitReview = async () => {
         });
         alert("شكراً لك! تم إرسال تقييمك بنجاح ⭐");
         window.closeReviewModal();
-    } catch (e) {
-        console.error(e);
-        alert("حدث خطأ أثناء التقييم");
-    } finally {
-        if(btn) { btn.innerText = "إرسال التقييم"; btn.disabled = false; }
-    }
+    } catch (e) { console.error(e); alert("حدث خطأ"); } 
+    finally { if(btn) { btn.innerText = "إرسال التقييم"; btn.disabled = false; } }
 };
 
 async function getLocationFromLink(gpsLink, elementId) {
@@ -217,10 +263,9 @@ async function getLocationFromLink(gpsLink, elementId) {
         const data = await response.json();
         const city = data.address.city || data.address.town || "";
         const suburb = data.address.suburb || data.address.neighbourhood || "";
-        const locationText = suburb ? `${city} - ${suburb}` : city;
         const elem = document.getElementById(elementId);
-        if(elem && locationText) {
-            elem.innerText = locationText;
+        if(elem) {
+            elem.innerText = suburb ? `${city} - ${suburb}` : city;
             elem.classList.add("text-slate-800", "font-bold");
             elem.classList.remove("text-gray-500");
         }
@@ -287,7 +332,7 @@ if (document.getElementById('medImage')) {
     });
 
     document.getElementById('submitBtn').addEventListener('click', async (e) => {
-        e.preventDefault(); // منع تحديث الصفحة
+        e.preventDefault(); // [تصحيح] منع تحديث الصفحة
         const btn = document.getElementById('submitBtn');
         const medName = document.getElementById('medName').value.trim();
         const wilaya = document.getElementById('wilaya').value;
@@ -349,6 +394,7 @@ if (trackBtn) {
             }
             const reqDoc = snap.docs[0];
             const reqData = reqDoc.data();
+            
             document.getElementById('loginSection').classList.add('hidden');
             document.getElementById('dashboardSection').classList.remove('hidden');
             document.getElementById('orderTitle').innerText = reqData.medName;
@@ -356,10 +402,12 @@ if (trackBtn) {
             onSnapshot(query(collection(db, "responses"), where("requestId", "==", reqDoc.id)), async (respSnap) => {
                 const list = document.getElementById('offersList');
                 list.innerHTML = "";
+
                 if(respSnap.empty) {
                     list.innerHTML = `<div class="bg-slate-50 rounded-2xl p-8 text-center border border-dashed border-slate-300"><p class="text-gray-400">لا توجد ردود حتى الآن</p></div>`;
                     return;
                 }
+
                 for (const d of respSnap.docs) {
                     const r = d.data();
                     const locId = `loc-${d.id}`;
@@ -367,16 +415,14 @@ if (trackBtn) {
                     try {
                         const pharmaSnap = await getDoc(doc(db, "pharmacists", r.pharmaId));
                         if(pharmaSnap.exists()) pharmaRating = pharmaSnap.data().rating || 0;
-                    } catch(e) { console.log("Error fetching rating"); }
-
-                    const starsHTML = window.getStarRatingHTML(pharmaRating);
+                    } catch(e) {}
 
                     list.innerHTML += `
                     <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mb-4 hover:shadow-md transition-all">
                         <div class="flex justify-between items-start mb-3">
                             <div>
                                 <h3 class="font-black text-slate-800 text-lg">${r.pharmaName}</h3>
-                                ${starsHTML}
+                                ${window.getStarRatingHTML(pharmaRating)}
                                 <p id="${locId}" class="text-xs text-gray-500 font-medium mt-1">📍 جارِ تحديد المنطقة...</p>
                             </div>
                             <span class="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-lg font-bold">متوفر</span>
@@ -387,6 +433,7 @@ if (trackBtn) {
                             <a href="tel:${r.phone}" onclick="window.markRequestAsTaken('${r.requestId}')" class="bg-slate-100 text-slate-700 hover:bg-slate-200 py-3 rounded-xl text-xs font-bold text-center transition">📞 اتصال</a>
                             ${r.gpsLink ? `<a href="${r.gpsLink}" onclick="window.markRequestAsTaken('${r.requestId}')" target="_blank" class="bg-blue-50 text-blue-600 hover:bg-blue-100 py-3 rounded-xl text-xs font-bold text-center transition">🗺️ الخريطة</a>` : ''}
                         </div>
+
                         <button onclick="window.openReviewModal('${r.pharmaId}', '${r.pharmaName}', '${r.wilaya}')" 
                             class="btn-attention w-full font-bold py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2">
                             <span class="text-xl">⭐</span>
@@ -401,12 +448,13 @@ if (trackBtn) {
 }
 
 // ============================================================
-// 7. منطق تسجيل الدخول والإنشاء (التصحيحات هنا)
+// 7. منطق تسجيل الدخول والإنشاء للصيدلي (seller-login.html)
 // ============================================================
 const sellerLoginBtn = document.getElementById('sellerLoginBtn');
 if (sellerLoginBtn) {
+    // 7.1 تسجيل الدخول
     sellerLoginBtn.addEventListener('click', async (e) => {
-        e.preventDefault(); // (هام جداً) منع إعادة تحميل الصفحة
+        e.preventDefault(); // [تصحيح] منع إعادة التحميل
         const email = document.getElementById('loginEmail').value;
         const pass = document.getElementById('loginPassword').value;
         if(!email || !pass) return alert("أدخل البيانات");
@@ -416,7 +464,7 @@ if (sellerLoginBtn) {
 
         try {
             await signInWithEmailAndPassword(auth, email, pass);
-            // لا حاجة لـ redirect يدوي، المراقب onAuthStateChanged سيقوم بذلك
+            // التوجيه يتم تلقائياً عبر onAuthStateChanged في الأعلى
         } catch(e) {
             console.error(e);
             alert("خطأ في الدخول: تأكد من الإيميل وكلمة السر");
@@ -425,10 +473,11 @@ if (sellerLoginBtn) {
         }
     });
 
-    const authBtn = document.getElementById('authBtn'); // زر التسجيل الجديد
+    // 7.2 إنشاء حساب جديد (هنا التعديل للمصداقية)
+    const authBtn = document.getElementById('authBtn');
     if (authBtn) {
         authBtn.addEventListener('click', async (e) => {
-            e.preventDefault(); // (هام جداً) إصلاح مشكلة فشل إنشاء الحساب
+            e.preventDefault(); // [تصحيح] منع إعادة التحميل
             
             const btn = document.getElementById('authBtn');
             const email = document.getElementById('email').value;
@@ -443,36 +492,35 @@ if (sellerLoginBtn) {
             btn.disabled = true;
 
             try {
-                // 1. إنشاء المستخدم في Authentication
+                // 1. إنشاء المستخدم
                 const cred = await createUserWithEmailAndPassword(auth, email, pass);
                 
-                // 2. حفظ البيانات في Firestore
+                // 2. حفظ البيانات مع جعل isVerified = false
                 await setDoc(doc(db, "pharmacists", cred.user.uid), {
                     shopName, phone, email, gpsLink, 
                     wilaya: "موقع GPS", 
-                    isVerified: false, 
+                    isVerified: false, // الحساب غير مفعل
                     isBlocked: false, 
-                    rating: 0,
+                    rating: 0, 
                     reviewCount: 0,
                     createdAt: serverTimestamp()
                 });
 
-                alert("تم إنشاء الحساب بنجاح! سيتم توجيهك...");
-                // التوجيه مباشرة للداشبورد بدلاً من reload
-                window.location.replace("dash.html"); 
+                // 3. تسجيل الخروج وإظهار رسالة
+                await signOut(auth);
+                alert("✅ تم إرسال طلب الانضمام بنجاح!\n\nللمصداقية، ستقوم الإدارة بمراجعة بيانات الصيدلية والتواصل معك.\nسيتم تفعيل الحساب بعد الموافقة.");
+                window.location.reload();
+
             } catch(e) { 
                 console.error(e);
-                let msg = "حدث خطأ";
-                if(e.code === 'auth/email-already-in-use') msg = "البريد الإلكتروني مستخدم بالفعل";
-                else if(e.code === 'auth/weak-password') msg = "كلمة المرور ضعيفة (يجب أن تكون 6 أحرف على الأقل)";
-                
-                alert("خطأ: " + msg); 
+                alert("خطأ: " + e.message); 
                 btn.innerText = "إنشاء حساب جديد";
                 btn.disabled = false;
             }
         });
     }
 
+    // 7.3 استعادة كلمة المرور
     const btnSendReset = document.getElementById('btnSendReset');
     if (btnSendReset) {
         btnSendReset.addEventListener('click', async (e) => {
@@ -486,7 +534,7 @@ if (sellerLoginBtn) {
 
             try {
                 await sendPasswordResetEmail(auth, email);
-                alert("تم إرسال رابط إعادة التعيين!");
+                alert("تم إرسال رابط التعيين!");
                 if(window.closeForgotModal) window.closeForgotModal(); 
             } catch (error) {
                 alert("خطأ: " + error.message);
@@ -499,11 +547,8 @@ if (sellerLoginBtn) {
 }
 
 // ============================================================
-// 8. منطق لوحة تحكم الصيدلي (DASH.HTML)
+// 8. منطق لوحة تحكم الصيدلي (dash.html)
 // ============================================================
-let currentPharmaId = null;
-let currentPharmaData = null;
-
 async function initDashboard(user) {
     currentPharmaId = user.uid;
     
@@ -524,7 +569,7 @@ async function initDashboard(user) {
                 document.getElementById('pharmaStarsDisplay').innerHTML = window.getStarRatingHTML(rating) + `<span class="text-[9px] text-gray-400 mr-1">(${count} تقييم)</span>`;
             }
         }
-        hideLoader(); // إخفاء اللودر فقط بعد تحميل البيانات
+        hideLoader();
     });
 
     performWeeklyCleanup();
@@ -537,17 +582,9 @@ const performWeeklyCleanup = async () => {
         cutoff.setDate(cutoff.getDate() - 7); 
         const reqQuery = query(collection(db, "requests"), where("createdAt", "<", cutoff));
         const reqSnap = await getDocs(reqQuery);
-        const resQuery = query(collection(db, "responses"), where("createdAt", "<", cutoff));
-        const resSnap = await getDocs(resQuery);
-
-        if (reqSnap.empty && resSnap.empty) return; 
-
         const batch = writeBatch(db);
         reqSnap.forEach(d => batch.delete(d.ref));
-        resSnap.forEach(d => batch.delete(d.ref));
-
         await batch.commit();
-        console.log("Cleanup performed.");
     } catch (e) { console.error("Cleanup error:", e); }
 };
 
@@ -585,26 +622,17 @@ function startDashboardListeners() {
                             <h3 class="font-black text-slate-800 text-xl leading-tight">${req.medName}</h3>
                             <span class="text-[10px] text-gray-400 font-mono bg-slate-50 px-2 py-1 rounded-lg">${timeAgo(req.createdAt)}</span>
                         </div>
-                        <p class="text-xs text-green-600 font-bold flex items-center gap-1">
-                            📍 <span class="text-slate-600">${req.wilaya}</span>
-                        </p>
+                        <p class="text-xs text-green-600 font-bold flex items-center gap-1">📍 <span class="text-slate-600">${req.wilaya}</span></p>
                         <a href="tel:${req.phoneNumber}" class="block w-fit text-xs text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 hover:bg-blue-100 transition mt-2">
                             📞 هاتف المريض: <span class="font-mono dir-ltr">${req.phoneNumber}</span>
                         </a>
                         ${req.notes ? `<div class="bg-orange-50 border-r-2 border-orange-200 p-3 rounded-l-xl mt-2"><p class="text-xs text-slate-600 leading-relaxed">📝 ${req.notes}</p></div>` : ''}
-                        <div class="mt-3 text-[9px] text-gray-400 font-medium leading-tight border-t border-dashed border-gray-100 pt-2">
-                            ⚠️ تنبيه: سيتم حذف الطلب تلقائياً بعد <span class="text-red-400 font-bold">48 ساعة</span> من بدء تواصل المريض معك.
-                        </div>
-                        ${req.interactionStarted ? `<div class="mt-1 text-[9px] text-red-500 font-bold animate-pulse">⏳ العد التنازلي للحذف بدأ بالفعل!</div>` : ''}
+                        ${req.interactionStarted ? `<div class="mt-1 text-[9px] text-red-500 font-bold animate-pulse">⏳ سيتم الحذف قريباً</div>` : ''}
                     </div>
+
                     <div class="flex flex-col gap-3 mt-4">
-                        ${req.imageUrl ? 
-                            `<button onclick="window.openLightbox('${req.imageUrl}')" class="w-full bg-slate-800 text-white py-3.5 rounded-xl text-xs font-bold shadow-md hover:bg-slate-700 transition flex items-center justify-center gap-2"><span>📷</span> عرض الوصفة الطبية</button>` 
-                            : `<div class="w-full bg-slate-50 text-gray-400 py-3 rounded-xl text-[10px] font-bold text-center border border-slate-100">🚫 لا توجد صورة مرفقة</div>`
-                        }
-                        <button onclick="window.respondToRequest('${d.id}')" class="w-full bg-green-600 text-white py-4 rounded-xl text-sm font-black shadow-lg shadow-green-200 hover:bg-green-700 hover:shadow-xl transition active:scale-[0.98] flex items-center justify-center gap-2">
-                            <span>✅</span> هذا الدواء متوفر عندي
-                        </button>
+                        ${req.imageUrl ? `<button onclick="window.openLightbox('${req.imageUrl}')" class="w-full bg-slate-800 text-white py-3.5 rounded-xl text-xs font-bold shadow-md hover:bg-slate-700 transition flex items-center justify-center gap-2"><span>📷</span> عرض الوصفة</button>` : `<div class="w-full bg-slate-50 text-gray-400 py-3 rounded-xl text-[10px] font-bold text-center border border-slate-100">🚫 لا توجد صورة</div>`}
+                        <button onclick="window.respondToRequest('${d.id}')" class="w-full bg-green-600 text-white py-4 rounded-xl text-sm font-black shadow-lg shadow-green-200 hover:bg-green-700 hover:shadow-xl transition active:scale-[0.98] flex items-center justify-center gap-2"><span>✅</span> متوفر عندي</button>
                     </div>
                 </div>`;
             }
@@ -620,7 +648,7 @@ function updateMyOffersList(snap) {
     if(snap.empty) { list.innerHTML = `<div class="text-center py-10 text-gray-300 text-xs border border-dashed border-gray-200 rounded-[2rem] bg-white">سجل ردودك فارغ</div>`; return; }
     snap.forEach(d => {
         const r = d.data();
-        list.innerHTML += `<div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm mb-2 opacity-75"><p class="text-xs font-bold text-gray-800">قمت بالرد على طلب (ID: ${r.requestId.substr(0,5)})</p><span class="text-[10px] text-gray-400">${timeAgo(r.createdAt)}</span></div>`;
+        list.innerHTML += `<div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm mb-2 opacity-75"><p class="text-xs font-bold text-gray-800">رد على طلب (ID: ${r.requestId.substr(0,5)})</p><span class="text-[10px] text-gray-400">${timeAgo(r.createdAt)}</span></div>`;
     });
 }
 
@@ -639,35 +667,21 @@ window.updatePharmaLocation = () => {
     }, (err) => { alert("فشل تحديد الموقع"); btn.innerHTML = "📍 تحديث تلقائي (GPS)"; btn.disabled = false; }, { enableHighAccuracy: true });
 };
 
-window.updatePharmaPhone = async () => { 
-    const phone = document.getElementById('editPhone').value; 
-    if(phone) { await updateDoc(doc(db, "pharmacists", currentPharmaId), { phone: phone }); alert("تم تغيير الرقم ✅"); } 
-};
+window.updatePharmaPhone = async () => { const phone = document.getElementById('editPhone').value; if(phone) { await updateDoc(doc(db, "pharmacists", currentPharmaId), { phone: phone }); alert("تم تغيير الرقم ✅"); } };
 
 window.changePharmaPassword = async () => {
     const oldPass = document.getElementById('oldPass').value;
     const newPass = document.getElementById('newPass').value;
     const confirmPass = document.getElementById('confirmPass').value;
-
     if(!oldPass || !newPass) return alert("الرجاء ملء جميع الحقول");
     if(newPass !== confirmPass) return alert("كلمات المرور الجديدة غير متطابقة");
     const user = auth.currentUser;
-    if(!user) return alert("الجلسة منتهية، أعد تسجيل الدخول");
-
     try {
         const cred = EmailAuthProvider.credential(user.email, oldPass);
         await reauthenticateWithCredential(user, cred);
         await updatePassword(user, newPass);
         alert("تم تغيير كلمة المرور بنجاح ✅");
-        document.getElementById('oldPass').value = "";
-        document.getElementById('newPass').value = "";
-        document.getElementById('confirmPass').value = "";
-        document.getElementById('passFieldsContainer').classList.add('hidden');
-    } catch(e) {
-        console.error(e);
-        if(e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') alert("كلمة المرور الحالية غير صحيحة ❌");
-        else alert("حدث خطأ: " + e.message);
-    }
+    } catch(e) { alert("كلمة المرور الحالية غير صحيحة ❌"); }
 };
 
 window.respondToRequest = async (requestId) => {
@@ -677,4 +691,71 @@ window.respondToRequest = async (requestId) => {
         await addDoc(collection(db, "responses"), { requestId: requestId, pharmaId: currentPharmaId, pharmaName: currentPharmaData.shopName, phone: currentPharmaData.phone, wilaya: currentPharmaData.wilaya, baladiya: currentPharmaData.baladiya || "غير محدد", gpsLink: currentPharmaData.gpsLink, notes: notes, createdAt: serverTimestamp() });
         alert("تم إرسال ردك للمريض! ✅");
     } catch(e) { console.error(e); alert("حدث خطأ في الإرسال"); }
+};
+
+// ============================================================
+// 9. لوحة تحكم الأدمن (admin.html) - المنطق الجديد
+// ============================================================
+// يجب أن يكون لديك <div id="adminPendingList"></div> في admin.html
+
+function initAdminPanel() {
+    hideLoader();
+    const listContainer = document.getElementById('adminPendingList');
+    if (!listContainer) return; // لسنا في صفحة الأدمن
+
+    // جلب الصيدليات التي حالتها isVerified == false
+    const q = query(collection(db, "pharmacists"), where("isVerified", "==", false));
+    
+    onSnapshot(q, (snap) => {
+        listContainer.innerHTML = "";
+        if(snap.empty) {
+            listContainer.innerHTML = `<div class="text-center py-10 text-gray-400">لا توجد طلبات معلقة ✅</div>`;
+            return;
+        }
+
+        snap.forEach(d => {
+            const pharma = d.data();
+            const locId = `admin-loc-${d.id}`;
+            
+            listContainer.innerHTML += `
+            <div class="bg-white p-4 rounded-xl shadow border border-orange-100 mb-4">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h3 class="font-bold text-lg">${pharma.shopName}</h3>
+                        <p class="text-sm text-gray-600">📞 ${pharma.phone}</p>
+                        <p class="text-xs text-gray-400 mt-1">📧 ${pharma.email}</p>
+                        <p class="text-xs text-gray-500 mt-1">تاريخ التسجيل: ${timeAgo(pharma.createdAt)}</p>
+                    </div>
+                    <a href="${pharma.gpsLink}" target="_blank" class="text-blue-600 text-xs bg-blue-50 px-2 py-1 rounded">🗺️ الموقع</a>
+                </div>
+                
+                <p id="${locId}" class="text-xs text-gray-500 my-2 bg-slate-50 p-2 rounded">جاري تحديد العنوان...</p>
+
+                <div class="flex gap-2 mt-3">
+                    <button onclick="window.approvePharma('${d.id}')" class="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-bold shadow hover:bg-green-700">✅ قبول وتفعيل</button>
+                    <button onclick="window.rejectPharma('${d.id}')" class="flex-1 bg-red-100 text-red-600 py-2 rounded-lg text-sm font-bold hover:bg-red-200">🗑️ رفض وحذف</button>
+                </div>
+            </div>
+            `;
+            // محاولة جلب العنوان للعرض
+            getLocationFromLink(pharma.gpsLink, locId);
+        });
+    });
+}
+
+// دوال الأدمن (Global Scope)
+window.approvePharma = async (id) => {
+    if(!confirm("هل أنت متأكد من تفعيل هذا الحساب؟")) return;
+    try {
+        await updateDoc(doc(db, "pharmacists", id), { isVerified: true });
+        alert("تم تفعيل الحساب بنجاح ✅");
+    } catch(e) { console.error(e); alert("خطأ في العملية"); }
+};
+
+window.rejectPharma = async (id) => {
+    if(!confirm("⚠️ هل أنت متأكد من رفض وحذف هذا الطلب؟")) return;
+    try {
+        await deleteDoc(doc(db, "pharmacists", id));
+        alert("تم رفض الطلب وحذفه 🗑️");
+    } catch(e) { console.error(e); alert("خطأ في العملية"); }
 };
