@@ -20,13 +20,13 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app); 
 const db = getFirestore(app);
 
-// [تصحيح] تثبيت الجلسة لمنع خروج الأدمن أو الصيدلي عند تحديث الصفحة
+// تثبيت الجلسة
 setPersistence(auth, browserLocalPersistence).catch((error) => {
     console.error("Persistence Error:", error);
 });
 
 // ============================================================
-// 2. ستايل الزر + شاشة التحميل (CSS)
+// 2. ستايل ولودر (CSS & Loader)
 // ============================================================
 const styleSheet = document.createElement("style");
 styleSheet.innerText = `
@@ -43,10 +43,6 @@ styleSheet.innerText = `
         position: relative;
         z-index: 10;
         border: none;
-    }
-    .btn-attention:active {
-        transform: scale(0.95);
-        animation: none;
     }
     #globalLoader { 
         position: fixed; inset: 0; background: #f8fafc; z-index: 99999; 
@@ -69,72 +65,90 @@ function hideLoader() {
 }
 
 // ============================================================
-// 3. المنطق الذكي للتحقق من الصفحات (Access Control)
+// 3. نظام الحماية والتحقق (Strict Access Control)
 // ============================================================
 
 // تحديد الصفحة الحالية
-const isDashPage = document.getElementById('ordersList'); // dash.html
-const isLoginPage = document.getElementById('sellerLoginBtn'); // seller-login.html
-const isAdminPage = document.getElementById('adminPendingList'); // admin.html (يجب إضافة هذا ID في صفحة الادمن)
+const isDashPage = document.getElementById('ordersList'); // صفحة الصيدلي
+const isLoginPage = document.getElementById('sellerLoginBtn'); // صفحة الدخول
+const isAdminPage = document.getElementById('adminPendingList'); // صفحة الأدمن
 
-// إذا لم تكن في صفحات تتطلب تحميل بيانات، اخفِ اللودر فوراً
+// إخفاء اللودر للصفحات العامة فقط (مثل الاندكس والتتبع)
 if (!isDashPage && !isLoginPage && !isAdminPage) {
     hideLoader();
 }
 
-// مراقبة المصادقة
 onAuthStateChanged(auth, async (user) => {
-    // 1. التعامل مع صفحة الدخول
+    // --- الحالة 1: المستخدم في صفحة تسجيل الدخول ---
     if (isLoginPage) {
         if (user) {
-            // المستخدم مسجل، نفحص هل هو أدمن أم صيدلي وهل هو مفعل
-            await checkUserStatus(user);
+            // المستخدم مسجل دخول بالفعل، يجب التحقق من صلاحيته قبل التوجيه
+            await checkUserAndRedirect(user);
         } else {
+            // غير مسجل، ابق في صفحة الدخول وأخف اللودر
             hideLoader();
         }
         return;
     }
 
-    // 2. التعامل مع صفحة الداشبورد
+    // --- الحالة 2: المستخدم في الداشبورد (هنا التصحيح الأهم) ---
     if (isDashPage) {
         if (user) {
-            // التأكد من أن الحساب مفعل (isVerified)
-            const docSnap = await getDoc(doc(db, "pharmacists", user.uid));
-            if (docSnap.exists()) {
-                if (docSnap.data().isVerified === true) {
-                    initDashboard(user); // الحساب مفعل -> حمل الداشبورد
+            // 🛑 لا تحمل الداشبورد مباشرة! تحقق من Firestore أولاً
+            try {
+                const docRef = doc(db, "pharmacists", user.uid);
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    
+                    if (data.isBlocked === true) {
+                        alert("⛔ تم حظر حسابك. يرجى مراجعة الإدارة.");
+                        await signOut(auth);
+                        window.location.href = "seller-login.html";
+                        return;
+                    }
+
+                    if (data.isVerified === true) {
+                        // ✅ الحساب مفعل -> اسمح بالدخول وحمل البيانات
+                        initDashboard(user);
+                    } else {
+                        // ❌ الحساب غير مفعل -> اطرد المستخدم
+                        alert("⏳ حسابك قيد المراجعة من قبل الإدارة.\nيرجى الانتظار حتى يتم تفعيله.");
+                        await signOut(auth);
+                        window.location.href = "seller-login.html";
+                    }
                 } else {
-                    // الحساب غير مفعل
-                    alert("⛔ حسابك قيد المراجعة من قبل الإدارة.\nيرجى الانتظار حتى يتم التأكد من بيانات الصيدلية.");
+                    // المستخدم مسجل في Auth ولكن ليس له بيانات في Firestore (ربما أدمن)
                     await signOut(auth);
                     window.location.href = "seller-login.html";
                 }
-            } else {
-                // مسجل دخول لكن لا يملك وثيقة (ربما أدمن دخل بالخطأ للداشبورد أو حساب محذوف)
-                 await signOut(auth);
-                 window.location.href = "seller-login.html";
+            } catch (error) {
+                console.error("Auth Check Error:", error);
+                await signOut(auth);
+                window.location.href = "seller-login.html";
             }
         } else {
+            // غير مسجل دخول أصلاً -> للطرد
             window.location.href = "seller-login.html";
         }
     }
 
-    // 3. التعامل مع صفحة الأدمن (admin.html)
+    // --- الحالة 3: صفحة الأدمن ---
     if (isAdminPage) {
         if (user) {
-            // يمكن هنا إضافة شرط خاص بإيميل الأدمن إذا أردت
-            initAdminPanel();
+            // الأدمن يتم التعامل معه في ملف admin.html، لكن هنا نخفي اللودر احتياطاً
+            hideLoader();
         } else {
             window.location.href = "seller-login.html";
         }
     }
 });
 
-// دالة مساعدة لفحص الحالة عند محاولة الدخول
-async function checkUserStatus(user) {
-    // إذا كان الإيميل هو إيميل الأدمن، نرسله لصفحة الأدمن
-    // [ملاحظة] استبدل admin@gmail.com بإيميل الأدمن الخاص بك
-    if (user.email === "admin@gmail.com") {
+// دالة التحقق عند محاولة الدخول من صفحة Login
+async function checkUserAndRedirect(user) {
+    // استثناء للأدمن
+    if (user.email === "david_hassan5@hotmail.com" || user.email === "admin@gmail.com") {
         window.location.href = "admin.html";
         return;
     }
@@ -143,24 +157,20 @@ async function checkUserStatus(user) {
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
-        if (docSnap.data().isVerified === true) {
+        const data = docSnap.data();
+        if (data.isVerified === true && !data.isBlocked) {
             window.location.href = "dash.html";
         } else {
-            alert("⏳ تم استلام طلبك، ولكن الحساب قيد المراجعة.\nسيقوم فريق الدعم بتفعيل حسابك بعد التحقق من البيانات.");
-            await signOut(auth); // تسجيل خروج ليبقى في صفحة الدخول
+            alert("⏳ الحساب قيد المراجعة أو محظور.");
+            await signOut(auth);
             hideLoader();
         }
     } else {
-        // حالة خاصة: إذا كان أدمن
-        if(document.location.href.includes("admin.html")) {
-             // لا تفعل شيئاً، سيتم التعامل معه في onAuthStateChanged
-        } else {
-             // مستخدم غريب
-             await signOut(auth);
-             hideLoader();
-        }
+        await signOut(auth);
+        hideLoader();
     }
 }
+
 
 // ============================================================
 // 4. دوال عامة (Helpers)
@@ -198,12 +208,11 @@ window.openReviewModal = (pharmaId, name, wilaya) => {
     currentReviewPharmaId = pharmaId;
     const modal = document.getElementById('reviewModal');
     if(!modal) return;
-    document.getElementById('reviewSellerName').innerText = name || "صيدلية";
+    document.getElementById('reviewSellerName').innerText = name || "";
     document.getElementById('reviewSellerWilaya').innerText = wilaya || "";
     currentRating = 0;
     window.setStars(0);
-    const textArea = document.getElementById('reviewText');
-    if(textArea) textArea.value = "";
+    document.getElementById('reviewText').value = "";
     modal.classList.remove('hidden');
     modal.classList.add('flex');
     setTimeout(() => { modal.classList.add('active'); }, 10);
@@ -332,7 +341,7 @@ if (document.getElementById('medImage')) {
     });
 
     document.getElementById('submitBtn').addEventListener('click', async (e) => {
-        e.preventDefault(); // [تصحيح] منع تحديث الصفحة
+        e.preventDefault(); 
         const btn = document.getElementById('submitBtn');
         const medName = document.getElementById('medName').value.trim();
         const wilaya = document.getElementById('wilaya').value;
@@ -454,7 +463,7 @@ const sellerLoginBtn = document.getElementById('sellerLoginBtn');
 if (sellerLoginBtn) {
     // 7.1 تسجيل الدخول
     sellerLoginBtn.addEventListener('click', async (e) => {
-        e.preventDefault(); // [تصحيح] منع إعادة التحميل
+        e.preventDefault(); 
         const email = document.getElementById('loginEmail').value;
         const pass = document.getElementById('loginPassword').value;
         if(!email || !pass) return alert("أدخل البيانات");
@@ -464,7 +473,7 @@ if (sellerLoginBtn) {
 
         try {
             await signInWithEmailAndPassword(auth, email, pass);
-            // التوجيه يتم تلقائياً عبر onAuthStateChanged في الأعلى
+            // التوجيه سيتم عبر onAuthStateChanged
         } catch(e) {
             console.error(e);
             alert("خطأ في الدخول: تأكد من الإيميل وكلمة السر");
@@ -473,11 +482,11 @@ if (sellerLoginBtn) {
         }
     });
 
-    // 7.2 إنشاء حساب جديد (هنا التعديل للمصداقية)
+    // 7.2 إنشاء حساب جديد (مع تفعيل نظام الانتظار)
     const authBtn = document.getElementById('authBtn');
     if (authBtn) {
         authBtn.addEventListener('click', async (e) => {
-            e.preventDefault(); // [تصحيح] منع إعادة التحميل
+            e.preventDefault(); 
             
             const btn = document.getElementById('authBtn');
             const email = document.getElementById('email').value;
@@ -492,23 +501,24 @@ if (sellerLoginBtn) {
             btn.disabled = true;
 
             try {
-                // 1. إنشاء المستخدم
+                // 1. إنشاء المستخدم في Authentication
                 const cred = await createUserWithEmailAndPassword(auth, email, pass);
                 
-                // 2. حفظ البيانات مع جعل isVerified = false
+                // 2. حفظ البيانات مع حالة isVerified: false
                 await setDoc(doc(db, "pharmacists", cred.user.uid), {
                     shopName, phone, email, gpsLink, 
                     wilaya: "موقع GPS", 
-                    isVerified: false, // الحساب غير مفعل
+                    isVerified: false, // 🛑 غير مفعل افتراضياً
                     isBlocked: false, 
                     rating: 0, 
                     reviewCount: 0,
                     createdAt: serverTimestamp()
                 });
 
-                // 3. تسجيل الخروج وإظهار رسالة
+                // 3. 🛑 تسجيل الخروج فوراً لكي لا يدخل الداشبورد
                 await signOut(auth);
-                alert("✅ تم إرسال طلب الانضمام بنجاح!\n\nللمصداقية، ستقوم الإدارة بمراجعة بيانات الصيدلية والتواصل معك.\nسيتم تفعيل الحساب بعد الموافقة.");
+
+                alert("✅ تم إرسال طلب الانضمام بنجاح!\n\nحفاظاً على المصداقية، سيقوم فريق الإدارة بمراجعة بياناتك.\nسيتم تفعيل الحساب بعد الموافقة.");
                 window.location.reload();
 
             } catch(e) { 
@@ -552,9 +562,17 @@ if (sellerLoginBtn) {
 async function initDashboard(user) {
     currentPharmaId = user.uid;
     
+    // مراقبة بيانات الصيدلي
     onSnapshot(doc(db, "pharmacists", user.uid), (docSnap) => {
         if (docSnap.exists()) {
             currentPharmaData = docSnap.data();
+
+            // فحص إضافي: إذا قام الأدمن بحظره وهو داخل الصفحة، يتم طرده
+            if(currentPharmaData.isVerified === false || currentPharmaData.isBlocked === true) {
+                 alert("⚠️ تم إيقاف حسابك من قبل الإدارة.");
+                 window.location.reload(); // سيقوم onAuthStateChanged بطرده
+                 return;
+            }
             
             if(document.getElementById('headerShopName')) 
                 document.getElementById('headerShopName').innerText = currentPharmaData.shopName;
@@ -694,68 +712,13 @@ window.respondToRequest = async (requestId) => {
 };
 
 // ============================================================
-// 9. لوحة تحكم الأدمن (admin.html) - المنطق الجديد
+// 9. لوحة تحكم الأدمن (admin.html Logic)
 // ============================================================
-// يجب أن يكون لديك <div id="adminPendingList"></div> في admin.html
+// يتم التعامل مع منطق الأدمن في ملف admin.html بشكل مستقل
+// ولكن في حال تم دمج الكود، هذا الجزء يدعم صفحة الأدمن
 
-function initAdminPanel() {
-    hideLoader();
-    const listContainer = document.getElementById('adminPendingList');
-    if (!listContainer) return; // لسنا في صفحة الأدمن
-
-    // جلب الصيدليات التي حالتها isVerified == false
-    const q = query(collection(db, "pharmacists"), where("isVerified", "==", false));
-    
-    onSnapshot(q, (snap) => {
-        listContainer.innerHTML = "";
-        if(snap.empty) {
-            listContainer.innerHTML = `<div class="text-center py-10 text-gray-400">لا توجد طلبات معلقة ✅</div>`;
-            return;
-        }
-
-        snap.forEach(d => {
-            const pharma = d.data();
-            const locId = `admin-loc-${d.id}`;
-            
-            listContainer.innerHTML += `
-            <div class="bg-white p-4 rounded-xl shadow border border-orange-100 mb-4">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h3 class="font-bold text-lg">${pharma.shopName}</h3>
-                        <p class="text-sm text-gray-600">📞 ${pharma.phone}</p>
-                        <p class="text-xs text-gray-400 mt-1">📧 ${pharma.email}</p>
-                        <p class="text-xs text-gray-500 mt-1">تاريخ التسجيل: ${timeAgo(pharma.createdAt)}</p>
-                    </div>
-                    <a href="${pharma.gpsLink}" target="_blank" class="text-blue-600 text-xs bg-blue-50 px-2 py-1 rounded">🗺️ الموقع</a>
-                </div>
-                
-                <p id="${locId}" class="text-xs text-gray-500 my-2 bg-slate-50 p-2 rounded">جاري تحديد العنوان...</p>
-
-                <div class="flex gap-2 mt-3">
-                    <button onclick="window.approvePharma('${d.id}')" class="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-bold shadow hover:bg-green-700">✅ قبول وتفعيل</button>
-                    <button onclick="window.rejectPharma('${d.id}')" class="flex-1 bg-red-100 text-red-600 py-2 rounded-lg text-sm font-bold hover:bg-red-200">🗑️ رفض وحذف</button>
-                </div>
-            </div>
-            `;
-            // محاولة جلب العنوان للعرض
-            getLocationFromLink(pharma.gpsLink, locId);
-        });
-    });
+if (isAdminPage) {
+    // كود الأدمن موجود في admin.html كما أرسلته سابقاً، 
+    // ولكن للتأكد من عدم حدوث تضارب، لن أضع كوداً مكرراً هنا 
+    // لأنك تستخدم logic.js في الصفحات العامة أيضاً.
 }
-
-// دوال الأدمن (Global Scope)
-window.approvePharma = async (id) => {
-    if(!confirm("هل أنت متأكد من تفعيل هذا الحساب؟")) return;
-    try {
-        await updateDoc(doc(db, "pharmacists", id), { isVerified: true });
-        alert("تم تفعيل الحساب بنجاح ✅");
-    } catch(e) { console.error(e); alert("خطأ في العملية"); }
-};
-
-window.rejectPharma = async (id) => {
-    if(!confirm("⚠️ هل أنت متأكد من رفض وحذف هذا الطلب؟")) return;
-    try {
-        await deleteDoc(doc(db, "pharmacists", id));
-        alert("تم رفض الطلب وحذفه 🗑️");
-    } catch(e) { console.error(e); alert("خطأ في العملية"); }
-};
