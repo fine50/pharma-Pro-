@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تتبع الدواء | Pharma Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style> 
+        body { 
+            font-family: 'Tajawal', sans-serif; 
+            background-color: #f8fafc; 
+        } 
+        
+        .glass { 
+            background: rgba(255, 255, 255, 0.9); 
+            backdrop-filter: blur(12px); 
+            border-bottom: 1px solid rgba(220, 220, 220, 0.4); 
+        }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+
+        .help-modal { 
+            opacity: 0; 
+            visibility: hidden; 
+            transition: all 0.3s ease; 
+        }
+        .help-modal.active { 
+            opacity: 1; 
+            visibility: visible; 
+        }
+        .help-content { 
+            transform: scale(0.95); 
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+        }
+        .help-modal.active .help-content { 
+            transform: scale(1); 
+        }
+
+        /* تنسيق النجوم المتوافق مع logic.js */
+        #starContainer span {
+            font-size: 2.5rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: transform 0.2s, color 0.2s;
+            color: #e2e8f0; /* رمادي افتراضي */
+        }
+        #starContainer span:hover {
+            transform: scale(1.2);
+        }
+        .text-orange-500 { color: #f97316 !important; }
+        .text-gray-600 { color: #4b5563 !important; }
+
+        /* --- كود الخلفية المتحركة --- */
+        @keyframes float {
+            0% { transform: translate(0px, 0px) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+            100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .blob { animation: float 10s infinite ease-in-out; }
+    </style>
+</head>
+<body class="text-slate-800 min-h-screen flex flex-col items-center relative overflow-x-hidden">
+
+    <!-- الخلفية الجمالية (تم إضافتها هنا) -->
+    <div class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+        <div class="blob absolute top-[-5%] right-[-5%] w-[400px] h-[400px] bg-green-200/40 rounded-full blur-[80px]"></div>
+        <div class="blob absolute bottom-[-5%] left-[-5%] w-[400px] h-[400px] bg-blue-200/40 rounded-full blur-[80px]" style="animation-delay: 3s;"></div>
+    </div>
+
+    <!-- 1. الهيدر -->
+    <header class="glass fixed top-0 w-full z-50 shadow-sm">
+        <div class="max-w-lg mx-auto px-4 py-3 flex justify-between items-center">
+            <a href="index.html" class="flex items-center gap-2 group">
+                <div class="bg-slate-50 p-2 rounded-xl group-hover:bg-green-50 transition border border-slate-200">
+                    <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 12H5m7 7l-7-7 7-7"></path></svg>
+                </div>
+            </a>
+            <h1 class="text-lg font-bold tracking-tight text-slate-800">تتبع <span class="text-green-600">الطلب</span></h1>
+            <div class="w-10"></div>
+        </div>
+    </header>
+
+    <!-- محتوى الصفحة الرئيسي -->
+    <main class="w-full max-w-sm px-4 mt-24 flex-1 flex flex-col">
+
+        <div class="text-center mb-8 animate-fade-in">
+            <h1 class="text-3xl font-black text-slate-800">تتبع  <span class="text-green-600">الدواء</span></h1>
+            <p class="text-gray-500 text-sm mt-2 font-medium">أدخل بياناتك لنتحقق من عروض الصيدليات</p>
+        </div>
+        
+        <!-- 2. قسم تسجيل الدخول للتتبع -->
+        <div id="loginSection" class="bg-white p-6 rounded-[1.5rem] w-full border border-slate-200 shadow-xl shadow-slate-200/50 relative mb-10 animate-fade-in group">
+            
+            <!-- زر المساعدة (?) -->
+            <button onclick="toggleHelpModal()" class="absolute top-4 left-4 w-7 h-7 rounded-full border border-slate-200 bg-slate-50 text-slate-400 hover:bg-green-600 hover:text-white hover:border-green-600 flex items-center justify-center transition-all z-10" title="كيف أستخدم الموقع؟">
+                <span class="text-xs font-bold">?</span>
+            </button>
+
+            <div class="space-y-5 pt-2">
+                <div>
+                    <label class="text-xs text-slate-500 font-bold mb-1 block">رقم الهاتف</label>
+                    <input id="trackPhone" type="tel" placeholder="0XXXXXXXXX" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-slate-800 focus:outline-none focus:border-green-500 focus:bg-white text-left font-mono placeholder-gray-400 transition" dir="ltr">
+                </div>
+
+                <div>
+                    <label class="text-xs text-slate-500 font-bold mb-1 block">الرمز السري للطلب</label>
+                    <input id="trackCode" type="number" placeholder="****" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-slate-800 focus:outline-none focus:border-green-500 focus:bg-white text-center font-mono tracking-[0.5em] placeholder-gray-400 transition" dir="ltr">
+                </div>
+
+                <button id="trackBtn" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3.5 rounded-xl shadow-lg mt-2 transition transform active:scale-[0.98] flex items-center justify-center gap-2">
+                    <span>عرض النتائج</span>
+                    <svg class="w-5 h-5 rtl:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 12h14"></path></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- 3. شاشة لوحة التحكم (تظهر بعد الدخول) -->
+        <div id="dashboardSection" class="hidden space-y-6 w-full animate-fade-in pb-10">
+            
+            <!-- كارت اسم الدواء -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 border-r-4 border-r-green-500 shadow-md">
+                <span class="text-green-600 text-[10px] font-bold uppercase tracking-wider block mb-1">الطلب الحالي</span>
+                <h3 id="orderTitle" class="text-2xl font-black text-slate-800">---</h3>
+            </div>
+
+            <div class="flex justify-between items-center px-1">
+                <h3 class="font-bold text-lg text-slate-800">الردود من الصيادلة</h3>
+                <span class="text-[10px] text-green-700 flex items-center gap-1 bg-green-50 px-3 py-1 rounded-full border border-green-200 font-bold">
+                    <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    تحديث مباشر
+                </span>
+            </div>
+
+            <!-- قائمة النتائج -->
+            <div id="offersList" class="space-y-4">
+                <div class="bg-slate-50 rounded-2xl p-8 text-center border border-dashed border-slate-300">
+                    <p class="text-lg font-bold mb-2 text-slate-400">جاري البحث...</p>
+                    <p class="text-xs text-gray-400">سنخبرك فور توفر الدواء في الصيدليات القريبة</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- نافذة المساعدة -->
+    <div id="trackHelpModal" class="help-modal fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onclick="toggleHelpModal()">
+        <div class="help-content bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 relative" onclick="event.stopPropagation()">
+            <div class="w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-100">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-center text-slate-800 mb-3">كيف أستخدم الصفحة؟</h3>
+            <div class="text-sm text-gray-600 leading-relaxed text-right space-y-4 font-medium">
+                
+                <ul class="list-disc list-inside space-y-2 text-slate-700">
+                    <li>أدخل <span class="text-green-600 font-bold">رقم هاتفك</span> و<span class="text-green-600 font-bold">الرمز السري</span> (الذي حصلت عليه عند الطلب).</li>
+                    <li>اضغط على "عرض النتائج" لرؤية الصيدليات التي قدمت لك عروض.</li>
+                    <li>بعد الحصول على الدواء، يمكنك <span class="text-green-600 font-bold">تقييم الصيدلية</span>.</li>
+                </ul>
+            </div>
+            <button onclick="toggleHelpModal()" class="mt-6 w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl transition text-sm">حسناً، فهمت</button>
+        </div>
+    </div>
+
+    <!-- نافذة التقييم -->
+    <div id="reviewModal" class="help-modal fixed inset-0 z-[100] hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md" onclick="document.getElementById('reviewModal').classList.add('hidden')">
+        <div class="help-content bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 relative border border-slate-100" onclick="event.stopPropagation()">
+            
+            <button onclick="document.getElementById('reviewModal').classList.add('hidden')" class="absolute top-4 left-4 text-gray-300 hover:text-red-500 transition">✕</button>
+
+            <div class="text-center pt-2">
+                <h3 class="text-xl font-black text-slate-800 mb-1">تقييم الخدمة</h3>
+                <p class="text-[11px] text-gray-400 mb-4 font-bold">ساعدنا في تحسين المنصة للمرضى الآخرين</p>
+
+                <!-- معلومات الصيدلية -->
+                <div class="bg-slate-50 rounded-xl p-4 mb-5 border border-slate-100">
+                    <h4 id="reviewSellerName" class="text-green-600 font-bold text-lg mb-1">---</h4>
+                    <div class="flex items-center justify-center gap-2 text-gray-500 text-xs">
+                        <span id="reviewSellerWilaya">---</span>
+                    </div>
+                </div>
+
+                <!-- النجوم -->
+                <div class="flex justify-center gap-2 mb-6" id="starContainer">
+                    <span onclick="window.setStars(1)">★</span>
+                    <span onclick="window.setStars(2)">★</span>
+                    <span onclick="window.setStars(3)">★</span>
+                    <span onclick="window.setStars(4)">★</span>
+                    <span onclick="window.setStars(5)">★</span>
+                </div>
+                
+                <textarea id="reviewText" rows="3" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-800 focus:outline-none focus:border-green-500 mb-4 placeholder-gray-400" placeholder="اكتب ملاحظاتك هنا..."></textarea>
+
+                <button id="submitReviewBtn" onclick="window.submitReview()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow-lg transition">
+                    إرسال التقييم
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleHelpModal() {
+            const modal = document.getElementById('trackHelpModal');
+            if(modal.classList.contains('active')) {
+                modal.classList.remove('active');
+            } else {
+                modal.classList.add('active');
+            }
+        }
+    </script>
+    
+    <!-- ربط ملف المنطق -->
+    <script type="module" src="./logic.js"></script>
+</body>
+</html>

@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>الرئيسية | صيدلية الخير</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style> 
+        body { 
+            font-family: 'Tajawal', sans-serif; 
+            background-color: #f8fafc;
+            /* تم نقل التحكم بالتمرير إلى كلاسات Tailwind في الأسفل */
+        } 
+        
+        @keyframes float {
+            0% { transform: translate(0px, 0px) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+            100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .blob { animation: float 10s infinite ease-in-out; }
+
+        .policy-content {
+            max-height: 0;
+            opacity: 0;
+            transition: all 0.5s ease-in-out;
+            pointer-events: none;
+            overflow: hidden; /* لمنع ظهور المحتوى أثناء الانغلاق */
+        }
+        .policy-content.open {
+            max-height: 800px; /* زيادة الارتفاع لضمان ظهور كل البنود */
+            opacity: 1;
+            pointer-events: auto;
+            margin-top: 1rem;
+            padding-bottom: 2rem; /* مساحة في الأسفل للتمرير المريح */
+        }
+
+        .help-modal {
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        .help-modal.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        .help-content {
+            transform: scale(0.95);
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .help-modal.active .help-content {
+            transform: scale(1);
+        }
+    </style>
+</head>
+<!-- 
+    تعديل هام هنا:
+    overflow-hidden + h-screen: يمنع السحب (Scroll) تماماً عند البداية 
+-->
+<body id="mainBody" class="text-slate-800 relative overflow-hidden h-screen selection:bg-green-500 selection:text-white p-6 flex flex-col">
+
+    <!-- خلفية جمالية ثابتة -->
+    <div class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+        <div class="blob absolute top-[-5%] right-[-5%] w-[400px] h-[400px] bg-green-200/40 rounded-full blur-[80px]"></div>
+        <div class="blob absolute bottom-[-5%] left-[-5%] w-[400px] h-[400px] bg-blue-200/40 rounded-full blur-[80px]" style="animation-delay: 3s;"></div>
+    </div>
+
+    <!-- حاوية المحتوى الرئيسية -->
+    <main class="flex-1 flex flex-col justify-center items-center w-full max-w-lg mx-auto py-4 relative z-10">
+        
+        <!-- 1. الشعار -->
+        <div class="text-center mb-8 animate-fade-in">
+            <h1 class="text-5xl font-black text-slate-800 tracking-tighter mb-2 italic">
+                PHARMA <span class="text-green-600">PRO</span>
+            </h1>
+            <p class="text-gray-400 text-[10px] font-black uppercase tracking-[0.3em] opacity-80">
+                شبكة البحث عن الأدوية المفقودة
+            </p>
+        </div>
+
+        <!-- 2. بطاقة "طلب دواء" -->
+        <div class="relative w-full mb-4 group">
+            <a href="customer.html" class="block w-full transform active:scale-[0.98] transition-all duration-300">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-green-500 to-emerald-400 rounded-[2rem] blur opacity-30 group-hover:opacity-50 transition duration-500"></div>
+                <div class="relative bg-white border border-green-50 rounded-[2rem] p-6 flex items-center justify-between shadow-xl shadow-green-100">
+                    <div class="flex items-center gap-5">
+                        <div class="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-600 border border-green-100 group-hover:bg-green-600 group-hover:text-white transition-all duration-300 text-xl">
+                            💊
+                        </div>
+                        <div class="text-right">
+                            <h2 class="text-lg font-black text-slate-800 uppercase tracking-tight">أبحث عن دواء</h2>
+                            <p class="text-gray-400 text-[10px] mt-0.5 font-medium">أرسل صورة الوصفة للصيادلة</p>
+                        </div>
+                    </div>
+                </div>
+            </a>
+            <button onclick="showHelp('search')" class="absolute top-3 left-4 z-20 w-6 h-6 rounded-full bg-slate-50 hover:bg-green-500 text-gray-400 hover:text-white border border-slate-200 flex items-center justify-center transition-all duration-300 shadow-md backdrop-blur-sm group-help">
+                <span class="text-[10px] font-bold">?</span>
+            </button>
+        </div>
+
+        <!-- 3. بطاقة "تتبع الطلبات" -->
+        <div class="relative w-full mb-4 group">
+            <a href="track.html" class="block w-full transform active:scale-[0.98] transition-all duration-300">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-blue-300 rounded-[2rem] blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
+                <div class="relative bg-white border border-blue-50 rounded-[2rem] p-6 flex items-center justify-between shadow-xl shadow-blue-50">
+                    <div class="flex items-center gap-5">
+                        <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-500 border border-blue-100 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300 text-xl">
+                            🔍
+                        </div>
+                        <div class="text-right">
+                            <h2 class="text-lg font-black text-slate-800 uppercase tracking-tight">متابعة الطلب</h2>
+                            <p class="text-gray-400 text-[10px] mt-0.5 font-medium">هل وجد أحد الدواء؟</p>
+                        </div>
+                    </div>
+                </div>
+            </a>
+            <button onclick="showHelp('track')" class="absolute top-3 left-4 z-20 w-6 h-6 rounded-full bg-slate-50 hover:bg-blue-500 text-gray-400 hover:text-white border border-slate-200 flex items-center justify-center transition-all duration-300 shadow-md backdrop-blur-sm">
+                <span class="text-[10px] font-bold">?</span>
+            </button>
+        </div>
+
+        <!-- 4. بطاقة "دخول الصيادلة" -->
+        <div class="relative w-full mb-6 group">
+            <a href="seller-login.html" class="block w-full transform active:scale-[0.98] transition-all duration-300">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-slate-200 to-slate-300 rounded-[2rem] blur opacity-40 group-hover:opacity-60 transition duration-500"></div>
+                <div class="relative bg-slate-50 border border-slate-200 rounded-[2rem] p-6 flex items-center justify-between shadow-lg">
+                    <div class="flex items-center gap-5">
+                        <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-500 border border-slate-200 group-hover:bg-slate-800 group-hover:text-white transition-all duration-300 text-xl">
+                            ⚕️
+                        </div>
+                        <div class="text-right">
+                            <h2 class="text-lg font-black text-slate-700 uppercase tracking-tight">بوابة الصيادلة</h2>
+                            <p class="text-orange-500 text-[10px] mt-0.5 font-bold animate-pulse">ساهم في مساعدة المرضىً ❤️</p>
+                        </div>
+                    </div>
+                    <div class="text-slate-400 group-hover:text-slate-800 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                    </div>
+                </div>
+            </a>
+            <button onclick="showHelp('seller')" class="absolute top-3 left-4 z-20 w-6 h-6 rounded-full bg-white hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-200 flex items-center justify-center transition-all duration-300 shadow-sm backdrop-blur-sm">
+                <span class="text-[10px] font-bold">?</span>
+            </button>
+        </div>
+
+        <!-- 5. قسم السياسات (المتحكم في السحب) -->
+        <div class="w-full text-center relative z-10 pb-4">
+            <button onclick="togglePolicies()" class="text-slate-400 hover:text-green-600 text-[10px] font-black uppercase tracking-[0.3em] transition-all inline-flex items-center gap-4 group cursor-pointer p-2">
+                <span class="w-8 h-[1px] bg-slate-300 group-hover:bg-green-500/50 transition-all"></span>
+                عن المبادرة
+                <span class="w-8 h-[1px] bg-slate-300 group-hover:bg-green-500/50 transition-all"></span>
+            </button>
+
+            <div id="policyBox" class="policy-content">
+                <div class="bg-white border border-slate-100 p-6 rounded-[2.5rem] shadow-xl text-right space-y-5 mt-4 mb-8">
+                    
+                    <!-- 1. الهدف -->
+                    <div class="border-r-2 border-green-500/50 pr-4">
+                        <h4 class="text-[11px] font-black text-slate-800 uppercase mb-1">الهدف</h4>
+                        <p class="text-[10px] text-gray-500 leading-relaxed font-medium">تسهيل العثور على الأدوية النادرة من خلال ربط المريض بأقرب صيدلية.</p>
+                    </div>
+
+                    <!-- 2. مجانية المنصة -->
+                    <div class="border-r-2 border-blue-500/50 pr-4">
+                        <h4 class="text-[11px] font-black text-slate-800 uppercase mb-1">مجانية التطبيق</h4>
+                        <p class="text-[10px] text-gray-500 leading-relaxed font-medium">استخدامك لهذا الموقع مجاني 100% ولا نأخذ أي عمولة منك أو من الصيدلي.</p>
+                    </div>
+
+                    <!-- 3. تكلفة الدواء -->
+                    <div class="border-r-2 border-red-500/50 pr-4">
+                        <h4 class="text-[11px] font-black text-slate-800 uppercase mb-1">تكلفة الدواء</h4>
+                        <p class="text-[10px] text-gray-500 leading-relaxed font-medium">
+                            <span class="text-red-500 font-bold">تنبيه هام:</span> الأدوية ليست مجانية. يتم شراء الدواء ودفع ثمنه في الصيدلية وفقاً للسعر الرسمي. دور المنصة يقتصر على البحث والتوجيه فقط.
+                        </p>
+                    </div>
+
+                    <!-- 4. المصداقية -->
+                    <div class="border-r-2 border-orange-500/50 pr-4">
+                        <h4 class="text-[11px] font-black text-slate-800 uppercase mb-1">المصداقية</h4>
+                        <p class="text-[10px] text-gray-500 leading-relaxed font-medium">يتم التحقق من حسابات الصيادلة يدوياً لضمان سلامة المعلومات.</p>
+                    </div>
+
+                    <!-- زر إغلاق السياسات -->
+                    <button onclick="togglePolicies()" class="w-full bg-slate-100 text-slate-500 font-bold py-3 rounded-xl text-xs mt-4 hover:bg-slate-200 transition">
+                        إغلاق القائمة
+                    </button>
+
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="py-4 text-center w-full opacity-40 text-[9px] font-black tracking-[0.4em] uppercase relative z-10 text-slate-400">
+        &copy; 2026 Pharma Pro
+    </footer>
+
+    <!-- نافذة الشرح المنبثقة (Help Modal) -->
+    <div id="helpModal" class="help-modal fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onclick="closeHelp()">
+        <div class="help-content bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 relative" onclick="event.stopPropagation()">
+            
+            <button onclick="closeHelp()" class="absolute top-4 left-4 text-gray-400 hover:text-red-500 transition">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+
+            <div class="text-center pt-4 pb-2">
+                <div id="helpIcon" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg border border-slate-100">
+                    <!-- Icon -->
+                </div>
+                
+                <h3 id="helpTitle" class="text-xl font-bold text-slate-800 mb-3">عنوان</h3>
+                <p id="helpText" class="text-sm text-gray-500 leading-relaxed whitespace-pre-line">شرح...</p>
+            </div>
+            
+            <button onclick="closeHelp()" class="mt-6 w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl transition text-sm shadow-lg">
+                حسناً، فهمت
+            </button>
+        </div>
+    </div>
+
+    <script>
+        function togglePolicies() {
+            const box = document.getElementById('policyBox');
+            const body = document.getElementById('mainBody');
+            
+            box.classList.toggle('open');
+
+            if(box.classList.contains('open')) {
+                // عند الفتح: السماح بالسحب (إزالة القفل)
+                body.classList.remove('overflow-hidden', 'h-screen');
+                // الانتقال الناعم للسياسات
+                setTimeout(() => {
+                    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 100);
+            } else {
+                // عند الإغلاق: إعادة القفل (منع السحب) والعودة للأعلى
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                
+                // ننتظر قليلاً حتى تنتهي حركة الصعود ثم نقفل الصفحة
+                setTimeout(() => {
+                    body.classList.add('overflow-hidden', 'h-screen');
+                }, 500); // 500ms هو نفس وقت الترانزيشن في CSS
+            }
+        }
+
+        const helpData = {
+            'search': {
+                title: 'كيف تطلب دواء؟',
+                text: '1. اضغط على الزر لملء استمارة بسيطة.\n2. اكتب اسم الدواء أو ارفع صورة الوصفة الطبية.\n3. سيتم إرسال طلبك فوراً لجميع الصيادلة المسجلين في منطقتك.\n\nعندما يتوفر الدواء، ستتلقى إشعارات في قسم التتبع.',
+                color: 'bg-green-50 text-green-600',
+                icon: '💊'
+            },
+            'track': {
+    title: 'متابعة حالة الطلب',
+    text: 'ستحصل على "رمز سري" بعد إرسال الطلب. احتفظ به جيداً!\n\nيمكنك العودة إلى هذه الصفحة في أي وقت وإدخال الرمز لمشاهدة العروض الجديدة.\n\n⚠️ ملاحظة: سيظل الطلب متاحاً للمراجعة، ولكنه سيُحذف نهائياً بعد مرور 24 ساعة من ضغطك على زر "اتصال" لأول مرة.',
+    color: 'bg-blue-50 text-blue-500',
+    icon: '📋'
+},
+            'seller': {
+                title: 'تنبيه للصيادلة',
+                text: 'هذا القسم مخصص لأصحاب الصيدليات فقط.\n\nيجب عليك التسجيل بحساب رسمي لتتمكن من:\n- استقبال طلبات الأدوية المفقودة في منطقتك.\n- الرد على المرضى وتوجيههم إليك.\n\n⚠️ الحساب يتطلب تفعيل الإدارة لضمان المصداقية.',
+                color: 'bg-slate-100 text-slate-600',
+                icon: '⚕️'
+            }
+        };
+
+        function showHelp(key) {
+            event.preventDefault(); 
+            event.stopPropagation();
+
+            const data = helpData[key];
+            const modal = document.getElementById('helpModal');
+            const iconDiv = document.getElementById('helpIcon');
+            
+            document.getElementById('helpTitle').innerText = data.title;
+            document.getElementById('helpText').innerText = data.text;
+            
+            iconDiv.className = `w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg border border-slate-100 ${data.color}`;
+            iconDiv.innerText = data.icon;
+
+            modal.classList.add('active');
+        }
+
+        function closeHelp() {
+            document.getElementById('helpModal').classList.remove('active');
+        }
+    </script>
+
+    <!-- ربط ملف المنطق -->
+    <script type="module" src="./logic.js"></script>
+</body>
+</html>

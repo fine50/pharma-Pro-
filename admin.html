@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>الإدارة | صيدلية الخير</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+    <style> 
+        body { font-family: 'Tajawal', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .section-animate { animation: slideIn 0.3s ease-out forwards; }
+        
+        .stat-card { transition: all 0.3s ease; background: white; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        .stat-card.active-pending { border-color: #eab308; background-color: #fefce8; transform: scale(1.02); box-shadow: 0 4px 10px rgba(234, 179, 8, 0.1); }
+        .stat-card.active-sellers { border-color: #3b82f6; background-color: #eff6ff; transform: scale(1.02); box-shadow: 0 4px 10px rgba(59, 130, 246, 0.1); }
+        .stat-card.active-orders { border-color: #22c55e; background-color: #f0fdf4; transform: scale(1.02); box-shadow: 0 4px 10px rgba(34, 197, 94, 0.1); }
+        
+        .nav-item { color: #94a3b8; transition: all 0.3s; }
+        .nav-item.active { color: #16a34a; }
+        .nav-item.active svg { transform: translateY(-3px); filter: drop-shadow(0 4px 6px rgba(22, 163, 74, 0.2)); }
+    </style>
+</head>
+<body class="bg-[#f8fafc] overflow-hidden">
+
+    <!-- 1. شاشة الدخول -->
+    <div id="adminLoginScreen" class="fixed inset-0 z-[100] flex flex-col items-center justify-center p-6 bg-[#f8fafc] overflow-y-auto">
+        <div class="absolute inset-0 overflow-hidden pointer-events-none">
+            <div class="absolute top-[-10%] right-[-10%] w-64 h-64 bg-green-400/10 rounded-full blur-[80px]"></div>
+            <div class="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-blue-400/10 rounded-full blur-[80px]"></div>
+        </div>
+        <div class="text-center mb-8 relative z-10">
+            <div class="w-20 h-20 bg-gradient-to-tr from-green-600 to-emerald-500 rounded-3xl flex items-center justify-center text-4xl shadow-2xl mx-auto mb-4 border border-white shadow-green-200">🔐</div>
+            <h1 class="text-3xl font-black text-slate-800 tracking-tight">Admin <span class="text-green-600">Pharma</span></h1>
+            <p class="text-slate-400 text-xs mt-2 tracking-widest uppercase font-bold">بوابة التحكم المركزية</p>
+        </div>
+        <div class="w-full max-w-xs space-y-4 relative z-10">
+            <input type="email" id="adminEmail" class="w-full bg-white border border-gray-200 rounded-2xl py-3 px-4 text-center text-lg text-slate-800 focus:outline-none focus:border-green-500 transition-all shadow-lg dir-ltr" placeholder="البريد الإلكتروني" dir="ltr">
+            <input type="password" id="adminPass" class="w-full bg-white border border-gray-200 rounded-2xl py-3 px-4 text-center text-lg tracking-widest text-slate-800 focus:outline-none focus:border-green-500 transition-all shadow-lg" placeholder="••••••">
+            <button id="btnAdminLogin" class="w-full bg-slate-800 text-white hover:bg-slate-900 py-4 rounded-2xl font-black text-sm shadow-xl transition-transform active:scale-95">تسجيل الدخول الآمن</button>
+            <p id="loginError" class="text-red-500 text-xs text-center font-bold hidden">بيانات الدخول غير صحيحة</p>
+        </div>
+    </div>
+
+    <!-- 2. لوحة التحكم -->
+    <div id="adminDashboard" class="hidden flex-col fixed inset-0 w-full h-full bg-[#f8fafc]">
+        
+        <!-- Header -->
+        <div class="flex-none bg-white/90 backdrop-blur-xl border-b border-gray-100 z-30">
+            <header class="flex justify-between items-center px-5 py-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-700 rounded-xl flex items-center justify-center text-white font-bold shadow-lg shadow-green-200">CP</div>
+                    <div>
+                        <h2 class="font-bold text-base leading-none text-slate-800">لوحة الإدارة</h2>
+                        <span id="adminEmailDisplay" class="text-[10px] text-green-500 font-bold">● متصل</span>
+                    </div>
+                </div>
+                <button id="btnLogout" class="bg-slate-50 p-2.5 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition border border-slate-100">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                </button>
+            </header>
+
+            <!-- Search -->
+            <div class="px-5 mb-2">
+                <div class="relative">
+                    <input type="text" id="globalAdminSearch" class="w-full bg-slate-50 border-none rounded-2xl py-3 pl-4 pr-12 text-sm text-slate-800 focus:ring-2 focus:ring-green-500/20 focus:bg-white placeholder-slate-400 transition shadow-inner" placeholder="بحث شامل...">
+                    <div class="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-3 px-3 gap-2 pb-3">
+                <div id="card-pending" class="stat-card rounded-2xl p-2 flex flex-col items-center cursor-pointer active-pending" onclick="showSection('pending')">
+                    <span class="text-yellow-600 text-[10px] font-bold mb-1">تفعيل</span>
+                    <span id="statPending" class="text-lg font-black text-slate-800">0</span>
+                    <span class="w-1.5 h-1.5 bg-yellow-500 rounded-full mt-1 animate-pulse"></span>
+                </div>
+                <div id="card-sellers" class="stat-card rounded-2xl p-2 flex flex-col items-center cursor-pointer" onclick="showSection('sellers')">
+                    <span class="text-blue-600 text-[10px] font-bold mb-1">صيادلة</span>
+                    <span id="statSellers" class="text-lg font-black text-slate-800">0</span>
+                </div>
+                <div id="card-orders" class="stat-card rounded-2xl p-2 flex flex-col items-center cursor-pointer" onclick="showSection('orders')">
+                    <span class="text-green-600 text-[10px] font-bold mb-1">طلبات</span>
+                    <span id="statOrders" class="text-lg font-black text-slate-800">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <main class="flex-1 overflow-y-auto scroll-smooth-area p-5 pb-32 space-y-6">
+            <!-- 1. الانضمام -->
+            <section id="sec-pending" class="section-animate">
+                <h3 class="text-slate-800 font-bold text-lg mb-4">طلبات الانضمام <span class="text-yellow-500 text-xs">(انتظار)</span></h3>
+                <div id="adminPendingList" class="space-y-3"><p class="text-center text-gray-400 text-xs py-10">جاري التحميل...</p></div>
+            </section>
+            
+            <!-- 2. الصيادلة -->
+            <section id="sec-sellers" class="hidden section-animate">
+                <h3 class="text-slate-800 font-bold text-lg mb-4">الصيادلة المعتمدين <span class="text-blue-500 text-xs">(نشط)</span></h3>
+                <div id="adminSellersList" class="space-y-3"><p class="text-center text-gray-400 text-xs py-10">جاري التحميل...</p></div>
+            </section>
+            
+            <!-- 3. الطلبات -->
+            <section id="sec-orders" class="hidden section-animate">
+                <h3 class="text-slate-800 font-bold text-lg mb-4">طلبات الأدوية <span class="text-green-500 text-xs">(مباشر)</span></h3>
+                <div id="adminOrdersList" class="space-y-3"><p class="text-center text-gray-400 text-xs py-10">جاري التحميل...</p></div>
+            </section>
+        </main>
+
+        <!-- Navbar -->
+        <nav class="flex-none fixed bottom-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-5 pt-2 z-50 px-2 shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
+            <div class="grid grid-cols-3 gap-1 max-w-md mx-auto">
+                <button onclick="showSection('pending')" id="nav-pending" class="nav-item active flex flex-col items-center gap-1 py-1"><div class="relative p-1.5"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg></div><span class="text-[10px] font-medium">انضمام</span></button>
+                <button onclick="showSection('sellers')" id="nav-sellers" class="nav-item flex flex-col items-center gap-1 py-1"><div class="relative p-1.5"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m8-2a2 2 0 100-4m0 4a2 2 0 110-4m-6 4v-4m12 4v-4"></path></svg></div><span class="text-[10px] font-medium">صيادلة</span></button>
+                <button onclick="showSection('orders')" id="nav-orders" class="nav-item flex flex-col items-center gap-1 py-1"><div class="relative p-1.5"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg></div><span class="text-[10px] font-medium">طلبات</span></button>
+            </div>
+        </nav>
+    </div>
+
+    <!-- 3. نافذة التفاصيل والملاحظات -->
+    <div id="detailsModal" class="fixed inset-0 bg-slate-900/80 hidden z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <!-- رأس المودال -->
+            <div class="bg-slate-800 p-6 text-white flex justify-between items-start flex-none">
+                <div>
+                    <h2 class="text-2xl font-black" id="modalName">اسم الصيدلية</h2>
+                    <div class="flex items-center gap-2 mt-2 text-yellow-400 font-bold text-lg">
+                        <span id="modalStars">★ 0.0</span>
+                        <span class="text-slate-400 text-xs font-normal" id="modalReviewCount">(0 تقييم)</span>
+                    </div>
+                </div>
+                <button onclick="window.closeModal()" class="bg-white/10 p-2 rounded-full hover:bg-white/20 transition">✕</button>
+            </div>
+
+            <!-- معلومات الاتصال -->
+            <div class="p-4 bg-slate-50 border-b border-gray-100 grid grid-cols-2 gap-4 flex-none">
+                <div>
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">الهاتف</p>
+                    <p class="font-mono font-bold text-slate-700 dir-ltr text-right text-sm" id="modalPhone">-</p>
+                </div>
+                <div>
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">الموقع</p>
+                    <a id="modalGPS" href="#" target="_blank" class="text-blue-600 font-bold text-sm hover:underline flex items-center gap-1">📍 فتح الخريطة</a>
+                </div>
+            </div>
+
+            <!-- قائمة الملاحظات -->
+            <div class="flex-1 overflow-y-auto p-5 bg-white">
+                <div class="flex justify-between items-center mb-4 border-b border-gray-50 pb-2">
+                    <h3 class="font-bold text-slate-800 text-sm">💬 ملاحظات المرضى</h3>
+                    <button onclick="window.deleteAllReviews()" class="bg-red-50 text-red-500 px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-red-100 transition">🗑️ حذف وتصفير الكل</button>
+                </div>
+                <div id="reviewsList" class="space-y-3"></div>
+            </div>
+            
+            <div class="p-4 border-t border-gray-100 text-center flex-none">
+                <button onclick="window.closeModal()" class="text-gray-400 text-sm font-bold hover:text-gray-600">إغلاق النافذة</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- كود الجافاسكربت -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDKuuVspUv3_IzjxQFMqG-2JucCkgt4pvY",
+            authDomain: "pharma-45f21.firebaseapp.com",
+            databaseURL: "https://pharma-45f21-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "pharma-45f21",
+            storageBucket: "pharma-45f21.firebasestorage.app",
+            messagingSenderId: "81580143218",
+            appId: "1:81580143218:web:1b15394de65f0bf00308eb",
+            measurementId: "G-TN72JS14PE"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentPharmaIdForDetails = null;
+
+        const btnLogin = document.getElementById('btnAdminLogin');
+        const loginScreen = document.getElementById('adminLoginScreen');
+        const dashboard = document.getElementById('adminDashboard');
+        const errorMsg = document.getElementById('loginError');
+
+        btnLogin.addEventListener('click', async () => {
+            const email = document.getElementById('adminEmail').value;
+            const pass = document.getElementById('adminPass').value;
+            btnLogin.innerText = "جاري التحقق...";
+            try {
+                await signInWithEmailAndPassword(auth, email, pass);
+            } catch (error) {
+                console.error(error);
+                btnLogin.innerText = "تسجيل الدخول الآمن";
+                errorMsg.classList.remove('hidden');
+                setTimeout(() => errorMsg.classList.add('hidden'), 3000);
+            }
+        });
+
+        onAuthStateChanged(auth, (user) => {
+            if (user && user.email === "david_hassan5@hotmail.com") {
+                loginScreen.classList.add('hidden');
+                dashboard.classList.remove('hidden');
+                dashboard.classList.add('flex');
+                document.getElementById('adminEmailDisplay').innerText = `● ${user.email}`;
+                startAdminListeners();
+            } else if (user) {
+                alert("ليس لديك صلاحيات أدمن");
+                signOut(auth);
+            } else {
+                loginScreen.classList.remove('hidden');
+                dashboard.classList.add('hidden');
+                dashboard.classList.remove('flex');
+            }
+        });
+
+        document.getElementById('btnLogout').addEventListener('click', () => { if(confirm("خروج؟")) signOut(auth); });
+
+        let state = { pending: [], active: [], orders: [] };
+
+        function startAdminListeners() {
+            onSnapshot(query(collection(db, "pharmacists"), where("isVerified", "==", false)), (snap) => {
+                state.pending = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+                updateUI('pending', state.pending);
+            });
+            onSnapshot(query(collection(db, "pharmacists"), where("isVerified", "==", true)), (snap) => {
+                state.active = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+                updateUI('sellers', state.active);
+            });
+            onSnapshot(collection(db, "requests"), (snap) => {
+                const activeReqs = snap.docs.filter(d => d.data().status === 'active');
+                state.orders = activeReqs.map(d => ({ id: d.id, data: d.data() }));
+                updateUI('orders', state.orders);
+            });
+        }
+
+        function updateUI(type, items) {
+            const term = document.getElementById('globalAdminSearch').value.toLowerCase();
+            const filtered = items.filter(item => {
+                const d = item.data;
+                if(type === 'orders') return (d.medName + d.phoneNumber).toLowerCase().includes(term);
+                return (d.shopName + d.phone + (d.wilaya||"")).toLowerCase().includes(term);
+            });
+
+            if(type === 'pending') document.getElementById('statPending').innerText = items.length;
+            if(type === 'sellers') document.getElementById('statSellers').innerText = items.length;
+            if(type === 'orders') document.getElementById('statOrders').innerText = items.length;
+
+            const listId = type === 'pending' ? 'adminPendingList' : (type === 'sellers' ? 'adminSellersList' : 'adminOrdersList');
+            const list = document.getElementById(listId);
+            list.innerHTML = "";
+
+            if (filtered.length === 0) { list.innerHTML = `<p class="text-center text-gray-400 text-xs py-8">لا توجد بيانات</p>`; return; }
+
+            filtered.forEach(item => {
+                const id = item.id;
+                const d = item.data;
+
+                if (type === 'pending') {
+                    list.innerHTML += `
+                        <div class="bg-white p-4 rounded-2xl border border-yellow-100 shadow-sm flex justify-between items-center mb-2">
+                            <div><h4 class="font-bold text-slate-800">${d.shopName}</h4><p class="text-xs text-gray-400">${d.phone} | ${d.wilaya || ''}</p></div>
+                            <div class="flex gap-2">
+                                <button onclick="window.adminAction('verify', '${id}')" class="bg-green-100 text-green-700 px-3 py-1.5 rounded-xl text-xs font-bold">قبول</button>
+                                <button onclick="window.adminAction('delete', '${id}')" class="bg-red-50 text-red-500 px-3 py-1.5 rounded-xl text-xs font-bold">رفض</button>
+                            </div>
+                        </div>`;
+                } else if (type === 'sellers') {
+                    // *** هنا تم التعديل لإضافة زر الحذف بجانب زر الحظر ***
+                    const rating = d.rating ? parseFloat(d.rating).toFixed(1) : "0.0";
+                    const count = d.reviewCount || 0;
+                    list.innerHTML += `
+                        <div onclick="window.openPharmaDetails('${id}')" class="${d.isBlocked ? 'bg-red-50' : 'bg-white'} p-4 rounded-2xl border border-blue-50 shadow-sm mb-2 cursor-pointer hover:shadow-md transition group relative">
+                            <div class="flex justify-between items-start mb-2">
+                                <div><h4 class="font-bold text-slate-800 text-lg group-hover:text-blue-600 transition">${d.shopName}</h4><p class="text-xs text-gray-400 font-mono">${d.phone}</p></div>
+                                <div class="text-center bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-100"><span class="block text-yellow-500 font-black text-sm">★ ${rating}</span><span class="text-[9px] text-gray-400">(${count})</span></div>
+                            </div>
+                            
+                            <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-50">
+                                <span class="text-[10px] font-bold ${d.isBlocked ? 'text-red-500 bg-red-50' : 'text-green-500 bg-green-50'} px-2 py-1.5 rounded">${d.isBlocked ? 'محظور' : 'نشط'}</span>
+                                
+                                <button onclick="event.stopPropagation(); window.adminAction('toggleBlock', '${id}', ${d.isBlocked})" class="flex-1 text-[10px] font-bold py-1.5 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 transition">
+                                    ${d.isBlocked ? 'فك الحظر' : 'حظر الحساب'}
+                                </button>
+                                
+                                <button onclick="event.stopPropagation(); window.adminAction('delete', '${id}')" class="flex-1 text-[10px] font-bold py-1.5 rounded bg-red-50 text-red-500 hover:bg-red-100 transition">
+                                    حذف نهائي
+                                </button>
+                            </div>
+                        </div>`;
+                } else if (type === 'orders') {
+                    list.innerHTML += `
+                        <div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm mb-2 flex justify-between items-center">
+                            <div><h4 class="font-bold text-slate-800">${d.medName}</h4><p class="text-xs text-gray-400">${d.phoneNumber}</p></div>
+                            <button onclick="window.adminAction('deleteReq', '${id}')" class="text-red-400 hover:bg-red-50 p-2 rounded-lg">🗑️</button>
+                        </div>`;
+                }
+            });
+        }
+
+        document.getElementById('globalAdminSearch').addEventListener('input', () => {
+            updateUI('pending', state.pending);
+            updateUI('sellers', state.active);
+            updateUI('orders', state.orders);
+        });
+
+        window.adminAction = async (action, id, status = false) => {
+            try {
+                if(action === 'verify') if(confirm("تفعيل؟")) await updateDoc(doc(db, "pharmacists", id), { isVerified: true });
+                if(action === 'delete') if(confirm("تحذير: سيتم حذف الحساب وجميع بياناته نهائياً. هل أنت متأكد؟")) {
+                    const q = query(collection(db, "responses"), where("pharmaId", "==", id));
+                    const snap = await getDocs(q);
+                    const batch = writeBatch(db);
+                    snap.forEach(d => batch.delete(d.ref));
+                    batch.delete(doc(db, "pharmacists", id));
+                    await batch.commit();
+                }
+                if(action === 'toggleBlock') await updateDoc(doc(db, "pharmacists", id), { isBlocked: !status });
+                if(action === 'deleteReq') if(confirm("حذف الطلب؟")) await deleteDoc(doc(db, "requests", id));
+            } catch(e) { console.error(e); alert("خطأ"); }
+        };
+
+        window.openPharmaDetails = async (id) => {
+            currentPharmaIdForDetails = id;
+            const modal = document.getElementById('detailsModal');
+            const reviewsList = document.getElementById('reviewsList');
+            modal.classList.remove('hidden');
+            reviewsList.innerHTML = `<p class="text-center text-gray-400 text-xs py-4">جاري تحميل الملاحظات...</p>`;
+            const pDoc = await getDoc(doc(db, "pharmacists", id));
+            if(pDoc.exists()) {
+                const d = pDoc.data();
+                document.getElementById('modalName').innerText = d.shopName;
+                document.getElementById('modalStars').innerText = `★ ${parseFloat(d.rating||0).toFixed(1)}`;
+                document.getElementById('modalReviewCount').innerText = `(${d.reviewCount||0} تقييم)`;
+                document.getElementById('modalPhone').innerText = d.phone;
+                document.getElementById('modalGPS').href = d.gpsLink;
+            }
+            const q = query(collection(db, "reviews"), where("pharmaId", "==", id), orderBy("createdAt", "desc"));
+            onSnapshot(q, (snap) => {
+                reviewsList.innerHTML = "";
+                if(snap.empty) { reviewsList.innerHTML = `<p class="text-center text-gray-300 text-xs py-4 border border-dashed border-gray-200 rounded-xl">لا توجد ملاحظات</p>`; return; }
+                snap.forEach(d => {
+                    const r = d.data();
+                    const date = r.createdAt ? new Date(r.createdAt.toDate()).toLocaleDateString('ar-EG') : '';
+                    reviewsList.innerHTML += `
+                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 relative group transition hover:bg-white hover:shadow-sm">
+                            <button onclick="window.deleteSingleReview('${d.id}')" class="absolute top-2 left-2 text-red-400 hover:text-red-600 bg-white px-2 py-1 rounded text-[10px] font-bold opacity-0 group-hover:opacity-100 transition shadow-sm">حذف</button>
+                            <div class="flex items-center gap-2 mb-1"><span class="text-yellow-500 text-xs font-bold">★ ${r.stars}</span><span class="text-[9px] text-gray-400">${date}</span></div>
+                            <p class="text-slate-700 text-xs leading-relaxed font-medium">${r.text || "بدون تعليق نصي"}</p>
+                        </div>`;
+                });
+            });
+        };
+
+        window.closeModal = () => document.getElementById('detailsModal').classList.add('hidden');
+
+        window.deleteSingleReview = async (reviewId) => {
+            if(!confirm("حذف هذه الملاحظة؟")) return;
+            try { await deleteDoc(doc(db, "reviews", reviewId)); recalculateRating(currentPharmaIdForDetails); } catch(e) { alert("خطأ في الحذف"); }
+        };
+
+        window.deleteAllReviews = async () => {
+            if(!confirm("تحذير: سيتم مسح كل التقييمات وتصفير العداد لهذا الصيدلي. هل أنت متأكد؟")) return;
+            try {
+                const q = query(collection(db, "reviews"), where("pharmaId", "==", currentPharmaIdForDetails));
+                const snap = await getDocs(q);
+                const batch = writeBatch(db);
+                snap.forEach(d => batch.delete(d.ref));
+                batch.update(doc(db, "pharmacists", currentPharmaIdForDetails), { rating: 0, reviewCount: 0 });
+                await batch.commit();
+                alert("تم التصفير بنجاح");
+                document.getElementById('modalStars').innerText = "★ 0.0";
+                document.getElementById('modalReviewCount').innerText = "(0 تقييم)";
+            } catch(e) { console.error(e); alert("خطأ"); }
+        };
+
+        async function recalculateRating(pharmaId) {
+            const q = query(collection(db, "reviews"), where("pharmaId", "==", pharmaId));
+            const snap = await getDocs(q);
+            let total = 0; let count = 0;
+            snap.forEach(d => { total += d.data().stars; count++; });
+            const avg = count > 0 ? (total / count) : 0;
+            await updateDoc(doc(db, "pharmacists", pharmaId), { rating: avg, reviewCount: count });
+            document.getElementById('modalStars').innerText = `★ ${avg.toFixed(1)}`;
+            document.getElementById('modalReviewCount').innerText = `(${count} تقييم)`;
+        }
+
+        window.showSection = function(secId) {
+            ['pending', 'sellers', 'orders'].forEach(id => {
+                document.getElementById('sec-' + id).classList.add('hidden');
+                document.getElementById('nav-' + id).classList.remove('active', 'text-green-600');
+                document.getElementById('nav-' + id).classList.add('text-slate-400');
+                document.getElementById('card-' + id).classList.remove('active-pending', 'active-sellers', 'active-orders');
+            });
+            document.getElementById('sec-' + secId).classList.remove('hidden');
+            document.getElementById('nav-' + secId).classList.add('active', 'text-green-600');
+            document.getElementById('nav-' + secId).classList.remove('text-slate-400');
+            document.getElementById('card-' + secId).classList.add('active-' + secId);
+        }
+    </script>
+</body>
+</html>

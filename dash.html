@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة الصيدلي | Pharma Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Tajawal', 'sans-serif'] },
+                    colors: { brand: { 500: '#16a34a', 600: '#15803d', 900: '#f8fafc' } }
+                }
+            }
+        }
+    </script>
+    <style> 
+        body { font-family: 'Tajawal', sans-serif; background-color: #f8fafc; color: #1e293b; min-height: 100vh; display: flex; flex-direction: column; } 
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        
+        .glass-header { 
+            background: rgba(255, 255, 255, 0.98); 
+            backdrop-filter: blur(12px); 
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05); 
+            box-shadow: 0 4px 20px -10px rgba(0,0,0,0.05);
+        }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .animate-slide-up { animation: slideUp 0.4s ease-out forwards; }
+        
+        .nav-active { color: #16a34a; transform: scale(1.1); transition: all 0.2s; }
+        .nav-active::after { content: ''; position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; background: #16a34a; border-radius: 50%; }
+        
+        @keyframes subtlePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .text-pulse { animation: subtlePulse 3s infinite; }
+    </style>
+</head>
+<body class="bg-slate-50 relative overflow-x-hidden selection:bg-green-500 selection:text-white">
+
+    <!-- خلفية جمالية -->
+    <div class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-40">
+        <div class="absolute top-[-5%] right-[-5%] w-[350px] h-[350px] bg-green-100 rounded-full blur-[90px]"></div>
+        <div class="absolute bottom-[-5%] left-[-5%] w-[350px] h-[350px] bg-blue-50 rounded-full blur-[90px]"></div>
+    </div>
+
+    <!-- Header المعدل ليشمل التقييم -->
+    <header class="glass-header sticky top-0 z-50 pt-4 pb-3">
+        <div class="max-w-md mx-auto px-5 flex justify-between items-start">
+            <div class="flex flex-col w-full">
+                <!-- الصف الأول: الشعار وزر الخروج -->
+                <div class="flex justify-between items-center w-full mb-3">
+                    <h1 class="text-2xl font-black tracking-tighter text-slate-800 italic">PHARMA <span class="text-green-600">PRO</span></h1>
+                    <button onclick="window.logout()" class="bg-red-50 text-red-500 p-2 rounded-xl hover:bg-red-100 transition border border-red-100 shadow-sm" title="تسجيل خروج">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                    </button>
+                </div>
+
+                <!-- الصف الثاني: معلومات الصيدلي + التقييم + الموقع -->
+                <div class="flex flex-col gap-1">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        <p class="text-sm font-bold text-slate-800" id="headerShopName">جاري التحميل...</p>
+                    </div>
+
+                    <!-- مكان ظهور النجوم والتقييم (جديد) -->
+                    <div id="pharmaStarsDisplay" class="flex items-center mt-0.5 min-h-[20px]">
+                        <!-- سيتم حقن النجوم هنا بواسطة JS -->
+                    </div>
+                    
+                    <!-- الموقع -->
+                    <div class="flex items-center gap-1.5 text-xs text-blue-600 font-bold bg-blue-50 w-fit px-2 py-1 rounded-lg mt-1">
+                        <span>📍</span>
+                        <span id="pharmaLocationDisplay">جاري تحديد منطقتك...</span>
+                    </div>
+
+                    <p class="text-[10px] text-gray-400 mt-1 font-medium">✨ ساعد المرضى في إيجاد دوائهم</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-y-auto pb-32 max-w-md mx-auto w-full p-4 hide-scrollbar">
+        
+        <!-- 1. قسم الطلبات (السوق) -->
+        <section id="view-market" class="block space-y-4 animate-slide-up">
+            <h2 class="text-xs font-black text-gray-400 tracking-widest uppercase px-1 mb-4 flex items-center justify-between">
+                <span>الطلبات المباشرة</span>
+                <span class="w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+            </h2>
+            
+            <div id="ordersList" class="space-y-5">
+                <div class="text-center py-20 text-gray-300 animate-pulse text-xs uppercase font-bold tracking-widest">جاري الاتصال بالسيرفر...</div>
+            </div>
+        </section>
+
+        <!-- 2. قسم ردودي -->
+        <section id="view-offers" class="hidden space-y-4 animate-slide-up">
+            <h2 class="text-xs font-black text-gray-400 tracking-widest uppercase px-1">ردودي <span class="text-green-600">السابقة</span></h2>
+            <div id="myOffersList" class="space-y-3"></div>
+        </section>
+
+        <!-- 3. قسم الإنجازات -->
+        <section id="view-sales" class="hidden space-y-5 animate-slide-up">
+            <div class="bg-slate-800 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
+                <div class="absolute -top-10 -right-10 w-32 h-32 bg-green-600 rounded-full blur-[60px] opacity-20"></div>
+                <p class="text-green-400 text-[10px] font-black mb-1 uppercase tracking-widest">عدد من ساعدتهم</p>
+                <h3 class="text-5xl font-black font-mono tracking-tighter" id="totalSalesCount">0</h3>
+                <p class="text-[9px] text-gray-400 mt-4 leading-relaxed opacity-70">كل رد منك قد ينقذ حياة مريض.</p>
+            </div>
+        </section>
+        
+        <!-- 4. قسم الإعدادات -->
+        <section id="view-settings" class="hidden space-y-6 animate-slide-up">
+            <!-- أ) تحديث الموقع GPS -->
+            <div class="bg-slate-800 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden mb-6">
+                <div class="absolute -top-10 -left-10 w-32 h-32 bg-blue-600 rounded-full blur-[60px] opacity-20"></div>
+                <h3 class="font-black text-white mb-4 flex items-center gap-2 text-sm uppercase">موقع <span class="text-blue-400 italic">الصيدلية</span></h3>
+                <div class="space-y-4 relative z-10">
+                    <p class="text-[10px] text-gray-400 leading-relaxed">تحديث موقعك يسمح للمرضى بالوصول إليك.</p>
+                    <button onclick="window.updatePharmaLocation()" id="btnUpdateLoc" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-xs hover:bg-blue-500 transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2">
+                        <span>📍 تحديث تلقائي (GPS)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ب) تغيير كلمة المرور -->
+            <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                <button onclick="togglePasswordFields()" class="w-full flex justify-between items-center group">
+                    <h3 class="font-black text-slate-800 text-sm uppercase group-hover:text-green-600 transition-colors">تغيير كلمة <span class="text-green-600 italic group-hover:text-slate-800">المرور</span></h3>
+                    <span id="passIcon" class="text-gray-400 text-xs transition-transform duration-300">▼</span>
+                </button>
+                <div id="passFieldsContainer" class="hidden space-y-3 mt-6 border-t border-slate-50 pt-4">
+                    <input type="password" id="oldPass" placeholder="الكلمة الحالية" class="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-4 text-sm focus:outline-none focus:border-green-500 transition-all">
+                    <input type="password" id="newPass" placeholder="الكلمة الجديدة" class="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-4 text-sm focus:outline-none focus:border-green-500 transition-all">
+                    <input type="password" id="confirmPass" placeholder="تأكيد الكلمة الجديدة" class="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-4 text-sm focus:outline-none focus:border-green-500 transition-all">
+                    <button onclick="window.changePharmaPassword()" id="btnChangePass" class="w-full bg-slate-800 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-slate-900 transition active:scale-95 text-xs">حفظ التغييرات</button>
+                </div>
+            </div>
+
+            <!-- ج) تحديث الهاتف -->
+            <div class="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-3">
+                <input type="tel" id="editPhone" placeholder="رقم الهاتف الجديد" class="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-green-500 transition-all font-mono" dir="ltr">
+                <button onclick="window.updatePharmaPhone()" class="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-bold hover:bg-slate-900 transition">تعديل</button>
+            </div>
+            
+             <!-- زر الخروج -->
+             <button onclick="window.logout()" class="w-full py-4 rounded-2xl font-black text-[10px] text-red-400 border border-red-50 hover:bg-red-50 transition-all uppercase tracking-widest">تسجيل خروج</button>
+        </section>
+
+    </main>
+
+    <!-- Bottom Nav -->
+    <nav class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-white/90 backdrop-blur-xl rounded-[2.5rem] border border-slate-100 shadow-2xl p-2 z-40">
+        <div class="max-w-md mx-auto flex justify-between items-center px-6">
+            <button onclick="switchTab('market')" id="nav-market" class="nav-active relative p-3 flex flex-col items-center group"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg></button>
+            <button onclick="switchTab('offers')" id="nav-offers" class="text-gray-300 relative p-3 flex flex-col items-center group"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg></button>
+            <button onclick="switchTab('sales')" id="nav-sales" class="text-gray-300 relative p-3 flex flex-col items-center group"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></button>
+            <button onclick="switchTab('settings')" id="nav-settings" class="text-gray-300 relative p-3 flex flex-col items-center group"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></button>
+        </div>
+    </nav>
+
+    <!-- Lightbox -->
+    <div id="imgLightbox" class="fixed inset-0 z-[9999] bg-black/95 hidden flex justify-center items-center cursor-zoom-out backdrop-blur-sm" onclick="this.classList.add('hidden')">
+        <img id="lightboxImg" src="" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl">
+    </div>
+
+    <script>
+        function switchTab(tabName) {
+            ['market', 'offers', 'sales', 'settings'].forEach(id => {
+                document.getElementById('view-' + id).classList.add('hidden');
+                document.getElementById('nav-' + id).classList.replace('nav-active', 'text-gray-300');
+            });
+            document.getElementById('view-' + tabName).classList.remove('hidden');
+            document.getElementById('nav-' + tabName).classList.add('nav-active');
+            document.getElementById('nav-' + tabName).classList.remove('text-gray-300');
+        }
+
+        function togglePasswordFields() {
+            const container = document.getElementById('passFieldsContainer');
+            const icon = document.getElementById('passIcon');
+            if (container.classList.contains('hidden')) {
+                container.classList.remove('hidden');
+                container.classList.add('animate-slide-up');
+                icon.style.transform = 'rotate(180deg)';
+            } else {
+                container.classList.add('hidden');
+                icon.style.transform = 'rotate(0deg)';
+            }
+        }
+    </script>
+    
+    <script type="module" src="./logic.js"></script>
+</body>
+</html>
