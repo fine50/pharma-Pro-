@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, getDoc, setDoc, doc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // ============================================================
@@ -432,12 +432,20 @@ if (sellerLoginBtn) {
     sellerLoginBtn.addEventListener('click', async () => {
         const email = document.getElementById('loginEmail').value;
         const pass = document.getElementById('loginPassword').value;
-        if(!email || !pass) return alert("أدخل البيانات");
+        
+        if (!email || !pass) return alert("أدخل البيانات");
+        
         sellerLoginBtn.innerText = "جاري الدخول...";
+        
         try {
+            // هذا السطر هو الأهم: يأمر المتصفح بحفظ الجلسة في الذاكرة الدائمة
+            await setPersistence(auth, browserLocalPersistence);
+            
+            // بعدها نقوم بتسجيل الدخول
             await signInWithEmailAndPassword(auth, email, pass);
-            // سيتم التحويل تلقائياً بواسطة onAuthStateChanged
-        } catch(e) {
+            
+            // لا نحتاج للتوجيه يدوياً، onAuthStateChanged ستقوم بذلك
+        } catch (e) {
             console.error(e);
             alert("خطأ في الدخول: تأكد من الإيميل وكلمة السر");
             sellerLoginBtn.innerText = "دخول للوحة التحكم";
