@@ -20,6 +20,15 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app); 
 const db = getFirestore(app);
 
+// [تعديل هام 1] فرض حفظ الجلسة محلياً فور تشغيل الموقع
+(async () => {
+    try {
+        await setPersistence(auth, browserLocalPersistence);
+    } catch (error) {
+        console.error("Persistence Error:", error);
+    }
+})();
+
 // ============================================================
 // 2. ستايل الزر + شاشة التحميل (CSS)
 // ============================================================
@@ -74,23 +83,30 @@ function hideLoader() {
 const isDashPage = document.getElementById('ordersList'); // صفحة الصيدلي فقط
 const isLoginPage = document.getElementById('sellerLoginBtn'); // صفحة الدخول
 
-// القاعدة 1: إذا لم تكن في صفحة الداشبورد (أي أنت في الاندكس، الطلب، التتبع، الخ)، افتح الموقع فوراً
-if (!isDashPage) {
+// [تعديل هام 2] منطق التحكم في اللودر لمنع الوميض
+// إذا لم تكن صفحة داشبورد ولا صفحة دخول (مثلاً صفحة المريض)، اخف اللودر فوراً
+if (!isDashPage && !isLoginPage) {
     hideLoader();
 }
 
 // مراقبة المصادقة للتوجيه الصحيح
 onAuthStateChanged(auth, (user) => {
-    // القاعدة 2: إذا كنا في صفحة الدخول والمستخدم مسجل بالفعل -> حوله للداشبورد
-    if (isLoginPage && user) {
-        window.location.href = "dash.html";
+    // الحالة A: نحن في صفحة الدخول
+    if (isLoginPage) {
+        if (user) {
+            // المستخدم مسجل بالفعل -> حوله للداشبورد (ولا تخف اللودر حتى يتم التحويل)
+            window.location.href = "dash.html";
+        } else {
+            // المستخدم غير مسجل -> الآن فقط أظهر صفحة الدخول
+            hideLoader();
+        }
         return;
     }
 
-    // القاعدة 3: إذا كنا في صفحة الداشبورد
+    // الحالة B: نحن في صفحة الداشبورد
     if (isDashPage) {
         if (user) {
-            // مسجل دخول: ابدأ بجلب البيانات (اللودر سيختفي لاحقاً عند اكتمال الجلب)
+            // مسجل دخول: ابدأ بجلب البيانات
             initDashboard(user);
         } else {
             // غير مسجل: اطرده لصفحة الدخول
@@ -438,13 +454,11 @@ if (sellerLoginBtn) {
         sellerLoginBtn.innerText = "جاري الدخول...";
         
         try {
-            // هذا السطر هو الأهم: يأمر المتصفح بحفظ الجلسة في الذاكرة الدائمة
+            // إضافة للتأكيد: حفظ الجلسة قبل تسجيل الدخول
             await setPersistence(auth, browserLocalPersistence);
             
-            // بعدها نقوم بتسجيل الدخول
             await signInWithEmailAndPassword(auth, email, pass);
-            
-            // لا نحتاج للتوجيه يدوياً، onAuthStateChanged ستقوم بذلك
+            // لا حاجة لـ window.location هنا، سيقوم المراقب (onAuthStateChanged) بذلك
         } catch (e) {
             console.error(e);
             alert("خطأ في الدخول: تأكد من الإيميل وكلمة السر");
