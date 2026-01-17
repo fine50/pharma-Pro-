@@ -497,39 +497,101 @@ if (sellerLoginBtn) {
 }
 
 // ============================================================
-// 8. منطق لوحة تحكم الصيدلي (DASH.HTML)
+// 8. منطق لوحة تحكم الصيدلي (DASH.HTML) - (معدل للتحقق من التفعيل)
 // ============================================================
 let currentPharmaId = null;
 let currentPharmaData = null;
 
-// دالة تهيئة الداشبورد بعد التأكد من المستخدم
+// دالة للخروج الفوري واستخدامها في شاشة الانتظار
+window.logoutNow = async () => {
+    await signOut(auth);
+    window.location.href = "seller-login.html";
+};
+
 async function initDashboard(user) {
     currentPharmaId = user.uid;
+    const pharmaRef = doc(db, "pharmacists", user.uid);
     
-    // مراقبة بيانات الصيدلي (للتحديث الفوري للنجوم والاسم)
-    onSnapshot(doc(db, "pharmacists", user.uid), (docSnap) => {
-        if (docSnap.exists()) {
-            currentPharmaData = docSnap.data();
-            
-            if(document.getElementById('headerShopName')) 
-                document.getElementById('headerShopName').innerText = currentPharmaData.shopName;
-            
-            if(document.getElementById('pharmaLocationDisplay') && currentPharmaData.gpsLink) {
-                getLocationFromLink(currentPharmaData.gpsLink, 'pharmaLocationDisplay');
-            }
-
-            if(document.getElementById('pharmaStarsDisplay')) {
-                const rating = currentPharmaData.rating || 0;
-                const count = currentPharmaData.reviewCount || 0;
-                document.getElementById('pharmaStarsDisplay').innerHTML = window.getStarRatingHTML(rating) + `<span class="text-[9px] text-gray-400 mr-1">(${count} تقييم)</span>`;
-            }
+    // 1. جلب البيانات مرة واحدة للتحقق من حالة الحساب قبل عرض أي شيء
+    try {
+        const docSnap = await getDoc(pharmaRef);
+        
+        if (!docSnap.exists()) {
+            alert("خطأ: حسابك غير موجود في قاعدة البيانات!");
+            window.logoutNow();
+            return;
         }
-        // *هام*: نخفي اللودر هنا فقط بعد تحميل البيانات
+        
+        const data = docSnap.data();
+        
+        // 2. التحقق: هل الحساب مفعل (isVerified == true)؟
+        if (data.isVerified === false) {
+            hideLoader(); // إخفاء لودر التحميل لعرض الرسالة
+            
+            // استبدال محتوى الصفحة برسالة "قيد المراجعة"
+            document.body.innerHTML = `
+<div style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; background:#f8fafc; font-family:sans-serif; padding:20px;">
+    <div style="font-size:60px; margin-bottom:20px;">⏳</div>
+    <h2 style="color:#1e293b; margin:0 0 10px; font-size:24px; font-weight:bold;">الحساب قيد المراجعة</h2>
+    <p style="color:#64748b; max-width:400px; line-height:1.6; font-size:16px;">
+        مرحباً <strong>${data.shopName}</strong>،<br>
+        تم تسجيل طلبك بنجاح. يقوم فريق العمل حالياً بالتحقق من بيانات الصيدلية.<br>
+        يرجى الانتظار حتى يتم تفعيل حسابك من قبل الإدارة.
+    </p>
+    <div style="margin-top:30px; display:flex; gap:10px;">
+        <button onclick="window.location.reload()" style="padding:12px 24px; background:#0f172a; color:white; border:none; border-radius:12px; cursor:pointer; font-weight:bold;">🔄 تحديث الحالة</button>
+        <button onclick="window.logoutNow()" style="padding:12px 24px; background:#fee2e2; color:#ef4444; border:none; border-radius:12px; cursor:pointer; font-weight:bold;">تسجيل خروج</button>
+    </div>
+</div>
+`;
+            return; // توقف هنا ولا تكمل الكود
+        }
+        
+        // 3. التحقق: هل الحساب محظور؟
+        if (data.isBlocked === true) {
+            alert("عذراً، تم تعطيل هذا الحساب من قبل الإدارة.");
+            window.logoutNow();
+            return;
+        }
+        
+        // ============================================================
+        // 4. إذا وصل لهنا، الحساب مفعل -> ابدأ تشغيل الداشبورد
+        // ============================================================
+        
+        // مراقبة التحديثات الحية (النجوم والاسم) لتبقى محدثة دائماً
+        onSnapshot(pharmaRef, (snap) => {
+            if (snap.exists()) {
+                currentPharmaData = snap.data();
+                
+                // تحقق أمني: إذا قام الأدمن بحظره وهو يتصفح
+                if (currentPharmaData.isBlocked || currentPharmaData.isVerified === false) {
+                    window.location.reload();
+                }
+                
+                if (document.getElementById('headerShopName'))
+                    document.getElementById('headerShopName').innerText = currentPharmaData.shopName;
+                
+                if (document.getElementById('pharmaLocationDisplay') && currentPharmaData.gpsLink) {
+                    getLocationFromLink(currentPharmaData.gpsLink, 'pharmaLocationDisplay');
+                }
+                
+                if (document.getElementById('pharmaStarsDisplay')) {
+                    const rating = currentPharmaData.rating || 0;
+                    const count = currentPharmaData.reviewCount || 0;
+                    document.getElementById('pharmaStarsDisplay').innerHTML = window.getStarRatingHTML(rating) + `<span class="text-[9px] text-gray-400 mr-1">(${count} تقييم)</span>`;
+                }
+            }
+            hideLoader();
+        });
+        
+        performWeeklyCleanup();
+        startDashboardListeners();
+        
+    } catch (error) {
+        console.error("Error fetching account data:", error);
+        alert("حدث خطأ في الاتصال، حاول مرة أخرى.");
         hideLoader();
-    });
-
-    performWeeklyCleanup();
-    startDashboardListeners();
+    }
 }
 
 const performWeeklyCleanup = async () => {
@@ -693,10 +755,34 @@ window.changePharmaPassword = async () => {
 };
 
 window.respondToRequest = async (requestId) => {
+    // التأكد أن بيانات الصيدلية قد تم تحميلها
+    if (!currentPharmaData) {
+        alert("انتظر لحظة حتى يتم تحميل بياناتك، ثم حاول مرة أخرى.");
+        return;
+    }
+    
     const notes = prompt("ملاحظة للمريض (مثال: السعر، الكمية، أو 'تعال الآن'):");
-    if(notes === null) return; 
+    if (notes === null) return; // تم إلغاء الأمر
+    
     try {
-        await addDoc(collection(db, "responses"), { requestId: requestId, pharmaId: currentPharmaId, pharmaName: currentPharmaData.shopName, phone: currentPharmaData.phone, wilaya: currentPharmaData.wilaya, baladiya: currentPharmaData.baladiya || "غير محدد", gpsLink: currentPharmaData.gpsLink, notes: notes, createdAt: serverTimestamp() });
+        // نستخدم (||) لمنع توقف الكود إذا كانت إحدى المعلومات غير مسجلة
+        await addDoc(collection(db, "responses"), {
+            requestId: requestId,
+            pharmaId: currentPharmaId,
+            pharmaName: currentPharmaData.shopName || "صيدلية",
+            phone: currentPharmaData.phone || "",
+            wilaya: currentPharmaData.wilaya || "غير محدد",
+            baladiya: currentPharmaData.baladiya || "غير محدد",
+            gpsLink: currentPharmaData.gpsLink || "",
+            notes: notes,
+            createdAt: serverTimestamp()
+        });
+        
         alert("تم إرسال ردك للمريض! ✅");
-    } catch(e) { console.error(e); alert("حدث خطأ في الإرسال"); }
+        
+    } catch (e) {
+        console.error("Error details:", e);
+        // عرض الخطأ بالتفصيل لنعرف السبب إذا تكرر
+        alert("فشل الإرسال: " + e.message);
+    }
 };
