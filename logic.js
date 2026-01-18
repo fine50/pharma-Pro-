@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, getDoc, setDoc, doc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // ============================================================
@@ -20,13 +20,8 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app); 
 const db = getFirestore(app);
 
-// تثبيت الجلسة
-setPersistence(auth, browserLocalPersistence).catch((error) => {
-    console.error("Persistence Error:", error);
-});
-
 // ============================================================
-// 2. ستايل ولودر (CSS & Loader)
+// 2. ستايل ولودر التحميل
 // ============================================================
 const styleSheet = document.createElement("style");
 styleSheet.innerText = `
@@ -38,16 +33,10 @@ styleSheet.innerText = `
     .btn-attention {
         animation: pulseAttention 2s infinite;
         background: linear-gradient(45deg, #f59e0b, #d97706);
-        color: white;
-        cursor: pointer !important;
-        position: relative;
-        z-index: 10;
-        border: none;
+        color: white; border: none; cursor: pointer !important; position: relative; z-index: 10;
     }
-    #globalLoader { 
-        position: fixed; inset: 0; background: #f8fafc; z-index: 99999; 
-        display: flex; justify-content: center; align-items: center; transition: opacity 0.3s; 
-    }
+    .btn-attention:active { transform: scale(0.95); animation: none; }
+    #globalLoader { position: fixed; inset: 0; background: #f8fafc; z-index: 99999; display: flex; justify-content: center; align-items: center; transition: opacity 0.3s; }
 `;
 document.head.appendChild(styleSheet);
 
@@ -58,132 +47,134 @@ document.body.appendChild(loaderDiv);
 
 function hideLoader() {
     const loader = document.getElementById('globalLoader');
-    if(loader) {
-        loader.style.opacity = '0';
-        setTimeout(() => { if(loader.parentNode) loader.parentNode.removeChild(loader); }, 300);
-    }
+    if(loader) { loader.style.opacity = '0'; setTimeout(() => { if(loader.parentNode) loader.parentNode.removeChild(loader); }, 300); }
 }
 
 // ============================================================
-// 3. نظام الحماية والتحقق (Strict Access Control)
+// 3. التحقق من الصلاحيات (Auth Logic)
 // ============================================================
+const isDashPage = document.getElementById('ordersList'); 
+const isLoginPage = document.getElementById('sellerLoginBtn');
 
-// تحديد الصفحة الحالية
-const isDashPage = document.getElementById('ordersList'); // صفحة الصيدلي
-const isLoginPage = document.getElementById('sellerLoginBtn'); // صفحة الدخول
-const isAdminPage = document.getElementById('adminPendingList'); // صفحة الأدمن
-
-// إخفاء اللودر للصفحات العامة فقط (مثل الاندكس والتتبع)
-if (!isDashPage && !isLoginPage && !isAdminPage) {
-    hideLoader();
-}
+if (!isDashPage && !isLoginPage) hideLoader();
 
 onAuthStateChanged(auth, async (user) => {
-    // --- الحالة 1: المستخدم في صفحة تسجيل الدخول ---
+    // 1. نحن في صفحة الدخول (login)
     if (isLoginPage) {
         if (user) {
-            // المستخدم مسجل دخول بالفعل، يجب التحقق من صلاحيته قبل التوجيه
-            await checkUserAndRedirect(user);
-        } else {
-            // غير مسجل، ابق في صفحة الدخول وأخف اللودر
-            hideLoader();
+            try {
+                // نتحقق مما إذا كان المستخدم مفعلاً
+                const docSnap = await getDoc(doc(db, "pharmacists", user.uid));
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.isVerified === true && !data.isBlocked) {
+                        window.location.href = "dash.html"; 
+                    } else {
+                        await signOut(auth); // غير مفعل -> خروج
+                        hideLoader();
+                    }
+                } else { 
+                    await signOut(auth); 
+                    hideLoader(); 
+                }
+            } catch (e) { 
+                await signOut(auth); 
+                hideLoader(); 
+            }
+        } else { 
+            hideLoader(); 
         }
         return;
     }
 
-    // --- الحالة 2: المستخدم في الداشبورد (هنا التصحيح الأهم) ---
+    // 2. نحن في صفحة الداشبورد
     if (isDashPage) {
         if (user) {
-            // 🛑 لا تحمل الداشبورد مباشرة! تحقق من Firestore أولاً
             try {
-                const docRef = doc(db, "pharmacists", user.uid);
-                const docSnap = await getDoc(docRef);
-
+                const docSnap = await getDoc(doc(db, "pharmacists", user.uid));
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    
-                    if (data.isBlocked === true) {
-                        alert("⛔ تم حظر حسابك. يرجى مراجعة الإدارة.");
-                        await signOut(auth);
-                        window.location.href = "seller-login.html";
-                        return;
-                    }
-
-                    if (data.isVerified === true) {
-                        // ✅ الحساب مفعل -> اسمح بالدخول وحمل البيانات
-                        initDashboard(user);
+                    if (data.isVerified === true && !data.isBlocked) {
+                        initDashboard(user); 
                     } else {
-                        // ❌ الحساب غير مفعل -> اطرد المستخدم
-                        alert("⏳ حسابك قيد المراجعة من قبل الإدارة.\nيرجى الانتظار حتى يتم تفعيله.");
-                        await signOut(auth);
-                        window.location.href = "seller-login.html";
+                        throw new Error("حساب غير مفعل");
                     }
-                } else {
-                    // المستخدم مسجل في Auth ولكن ليس له بيانات في Firestore (ربما أدمن)
-                    await signOut(auth);
-                    window.location.href = "seller-login.html";
-                }
+                } else { throw new Error("لا توجد بيانات"); }
             } catch (error) {
-                console.error("Auth Check Error:", error);
+                console.error("Auth:", error);
                 await signOut(auth);
-                window.location.href = "seller-login.html";
+                window.location.href = "seller-login.html"; // تأكد من أن اسم الملف صحيح
             }
-        } else {
-            // غير مسجل دخول أصلاً -> للطرد
-            window.location.href = "seller-login.html";
-        }
-    }
-
-    // --- الحالة 3: صفحة الأدمن ---
-    if (isAdminPage) {
-        if (user) {
-            // الأدمن يتم التعامل معه في ملف admin.html، لكن هنا نخفي اللودر احتياطاً
-            hideLoader();
         } else {
             window.location.href = "seller-login.html";
         }
     }
 });
 
-// دالة التحقق عند محاولة الدخول من صفحة Login
-async function checkUserAndRedirect(user) {
-    // استثناء للأدمن
-    if (user.email === "david_hassan5@hotmail.com" || user.email === "admin@gmail.com") {
-        window.location.href = "admin.html";
-        return;
-    }
+// ============================================================
+// 4. دالة استخراج اسم المدينة (آمنة وضد التعليق)
+// ============================================================
+async function getCityNameFromLink(gpsLink) {
+    // إذا الرابط فارغ، ارجع فوراً
+    if (!gpsLink) return "غير محدد";
 
-    const docRef = doc(db, "pharmacists", user.uid);
-    const docSnap = await getDoc(docRef);
-
-    if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.isVerified === true && !data.isBlocked) {
-            window.location.href = "dash.html";
-        } else {
-            alert("⏳ الحساب قيد المراجعة أو محظور.");
-            await signOut(auth);
-            hideLoader();
+    // استخراج الإحداثيات
+    let lat, lng;
+    try {
+        if (gpsLink.includes("q=")) {
+            const parts = gpsLink.split("q=")[1].split(",");
+            lat = parts[0]; lng = parts[1];
+        } else if (gpsLink.includes("@")) {
+            const parts = gpsLink.split("@")[1].split(",");
+            lat = parts[0]; lng = parts[1];
+        } else if (gpsLink.includes(",")) {
+            const parts = gpsLink.split(",");
+            if(parts.length >= 2) { lat = parts[0].trim(); lng = parts[1].trim(); }
         }
-    } else {
-        await signOut(auth);
-        hideLoader();
+    } catch(e) { return "رابط الموقع"; }
+
+    if (!lat || !lng) return "رابط الموقع";
+
+    // المحاولة الآمنة: نستخدم Promise.race لعمل "مؤقت"
+    // إذا تأخر الطلب أكثر من 2000 ميلي ثانية (2 ثانية)، سنلغيه ونكمل بدونه
+    const timeoutPromise = new Promise((resolve) => {
+        setTimeout(() => resolve("TIMEOUT"), 2000); 
+    });
+
+    try {
+        const fetchPromise = fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&accept-language=ar`);
+        
+        // السباق: أيهما ينتهي أولاً (جلب البيانات أو المؤقت)
+        const result = await Promise.race([fetchPromise, timeoutPromise]);
+
+        if (result === "TIMEOUT") {
+            console.warn("تجاوزنا جلب الاسم بسبب البطء");
+            return "موقع GPS"; // تعذر الجلب بسبب الوقت
+        }
+
+        if (!result.ok) throw new Error("Network error");
+
+        const data = await result.json();
+        const city = data.address.state || data.address.city || data.address.town || "";
+        const sub = data.address.suburb || data.address.county || "";
+        
+        return sub ? `${city} - ${sub}` : city;
+
+    } catch (error) {
+        console.warn("فشل جلب اسم المدينة:", error);
+        return "موقع GPS"; // في حال الخطأ نرجع نصاً افتراضياً ولا نوقف البرنامج
     }
 }
 
-
 // ============================================================
-// 4. دوال عامة (Helpers)
+// 5. الوظائف المساعدة (نجوم، صور، وقت)
 // ============================================================
 window.getStarRatingHTML = (rating) => {
     const r = parseFloat(rating) || 0;
     const fullStars = Math.floor(r);
-    const hasHalf = r % 1 >= 0.5;
     let html = '';
     for(let i=0; i<5; i++) {
-        if(i < fullStars) html += '<span class="text-yellow-400">★</span>';
-        else if(i === fullStars && hasHalf) html += '<span class="text-yellow-400 text-opacity-60">★</span>';
-        else html += '<span class="text-gray-200">★</span>';
+        html += i < fullStars ? '<span class="text-yellow-400">★</span>' : '<span class="text-gray-200">★</span>';
     }
     return `<div class="flex text-sm tracking-tighter">${html} <span class="text-[10px] text-gray-400 mr-1 pt-1">(${r.toFixed(1)})</span></div>`;
 };
@@ -194,92 +185,54 @@ window.markRequestAsTaken = async (requestId) => {
         const reqRef = doc(db, "requests", requestId);
         const docSnap = await getDoc(reqRef);
         if (docSnap.exists() && !docSnap.data().expiresAt) {
-            const expiryDate = new Date();
-            expiryDate.setHours(expiryDate.getHours() + 48); 
+            const expiryDate = new Date(); expiryDate.setHours(expiryDate.getHours() + 48); 
             await updateDoc(reqRef, { expiresAt: expiryDate, interactionStarted: true });
         }
     } catch (e) { console.error(e); }
 };
 
-let currentReviewPharmaId = null; 
-let currentRating = 0;
-
+// منطق التقييم
+let currentReviewPharmaId = null; let currentRating = 0;
 window.openReviewModal = (pharmaId, name, wilaya) => {
     currentReviewPharmaId = pharmaId;
     const modal = document.getElementById('reviewModal');
-    if(!modal) return;
-    document.getElementById('reviewSellerName').innerText = name || "";
-    document.getElementById('reviewSellerWilaya').innerText = wilaya || "";
-    currentRating = 0;
-    window.setStars(0);
-    document.getElementById('reviewText').value = "";
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
-    setTimeout(() => { modal.classList.add('active'); }, 10);
+    if(modal) {
+        document.getElementById('reviewSellerName').innerText = name;
+        document.getElementById('reviewSellerWilaya').innerText = wilaya;
+        window.setStars(0);
+        modal.classList.remove('hidden'); modal.classList.add('flex');
+        setTimeout(() => modal.classList.add('active'), 10);
+    }
 };
-
 window.closeReviewModal = () => {
     const modal = document.getElementById('reviewModal');
     modal.classList.remove('active');
     setTimeout(() => { modal.classList.remove('flex'); modal.classList.add('hidden'); }, 300);
 };
-
 window.setStars = (n) => {
     currentRating = n;
-    const spans = document.querySelectorAll('#starContainer span');
-    spans.forEach((s, i) => {
-        if (i < n) { s.style.color = '#f97316'; s.style.transform = 'scale(1.2)'; } 
-        else { s.style.color = '#e2e8f0'; s.style.transform = 'scale(1)'; }
+    document.querySelectorAll('#starContainer span').forEach((s, i) => {
+        s.style.color = i < n ? '#f97316' : '#e2e8f0';
+        s.style.transform = i < n ? 'scale(1.2)' : 'scale(1)';
     });
 };
-
 window.submitReview = async () => {
-    if(currentRating === 0) return alert("الرجاء اختيار عدد النجوم");
+    if(currentRating === 0) return alert("الرجاء اختيار النجوم");
     const text = document.getElementById('reviewText').value;
-    const btn = document.querySelector('#reviewModal button.btn-attention');
-    if(btn) { btn.innerText = "جاري الإرسال..."; btn.disabled = true; }
-
     try {
         const pharmaRef = doc(db, "pharmacists", currentReviewPharmaId);
-        await runTransaction(db, async (transaction) => {
-            const pharmaDoc = await transaction.get(pharmaRef);
-            if (!pharmaDoc.exists()) throw "Pharmacist not found";
-            const data = pharmaDoc.data();
-            const newCount = (data.reviewCount || 0) + 1;
-            const newRating = ((data.rating || 0) * (data.reviewCount || 0) + currentRating) / newCount;
-
-            transaction.update(pharmaRef, { rating: newRating, reviewCount: newCount });
-            const newReviewRef = doc(collection(db, "reviews"));
-            transaction.set(newReviewRef, {
-                pharmaId: currentReviewPharmaId,
-                pharmaName: data.shopName,
-                stars: currentRating,
-                text: text,
-                createdAt: serverTimestamp()
-            });
+        await runTransaction(db, async (t) => {
+            const p = await t.get(pharmaRef);
+            if(!p.exists()) throw "Error";
+            const d = p.data();
+            const newCount = (d.reviewCount || 0) + 1;
+            const newRating = ((d.rating || 0) * (d.reviewCount || 0) + currentRating) / newCount;
+            t.update(pharmaRef, { rating: newRating, reviewCount: newCount });
+            t.set(doc(collection(db, "reviews")), { pharmaId: currentReviewPharmaId, pharmaName: d.shopName, stars: currentRating, text: text, createdAt: serverTimestamp() });
         });
-        alert("شكراً لك! تم إرسال تقييمك بنجاح ⭐");
-        window.closeReviewModal();
-    } catch (e) { console.error(e); alert("حدث خطأ"); } 
-    finally { if(btn) { btn.innerText = "إرسال التقييم"; btn.disabled = false; } }
+        alert("تم إرسال التقييم بنجاح"); window.closeReviewModal();
+    } catch(e) { alert("خطأ في التقييم"); }
 };
-
-async function getLocationFromLink(gpsLink, elementId) {
-    if (!gpsLink || !gpsLink.includes("q=")) return;
-    try {
-        const coords = gpsLink.split("q=")[1].split(",");
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords[0]}&lon=${coords[1]}&zoom=18&addressdetails=1`);
-        const data = await response.json();
-        const city = data.address.city || data.address.town || "";
-        const suburb = data.address.suburb || data.address.neighbourhood || "";
-        const elem = document.getElementById(elementId);
-        if(elem) {
-            elem.innerText = suburb ? `${city} - ${suburb}` : city;
-            elem.classList.add("text-slate-800", "font-bold");
-            elem.classList.remove("text-gray-500");
-        }
-    } catch (error) { console.error("Loc Error", error); }
-}
 
 window.openLightbox = (src) => {
     const box = document.getElementById('imgLightbox');
@@ -300,285 +253,265 @@ const compressImage = (file) => {
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target.result;
+        reader.onload = (e) => {
+            const img = new Image(); img.src = e.target.result;
             img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 800;
-                const scale = MAX_WIDTH / img.width;
-                if (img.width > MAX_WIDTH) { canvas.width = MAX_WIDTH; canvas.height = img.height * scale; } 
-                else { canvas.width = img.width; canvas.height = img.height; }
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                resolve(canvas.toDataURL('image/jpeg', 0.6));
+                const cvs = document.createElement('canvas');
+                const scale = 800 / img.width;
+                cvs.width = img.width > 800 ? 800 : img.width;
+                cvs.height = img.width > 800 ? img.height * scale : img.height;
+                cvs.getContext('2d').drawImage(img, 0, 0, cvs.width, cvs.height);
+                resolve(cvs.toDataURL('image/jpeg', 0.6));
             };
         };
     });
 };
 
 // ============================================================
-// 5. منطق صفحة المريض (ORDER.HTML)
+// 6. منطق طلب الدواء (صفحة المريض)
 // ============================================================
 if (document.getElementById('medImage')) {
     let uploadedImageBase64 = null;
-    const fileInput = document.getElementById('medImage');
-    const imagePreview = document.getElementById('imagePreview');
-    const uploadPlaceholder = document.getElementById('uploadPlaceholder');
-
-    fileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (evt) => {
-                imagePreview.src = evt.target.result;
-                imagePreview.classList.remove('hidden');
-                uploadPlaceholder.classList.add('hidden');
-            };
-            reader.readAsDataURL(file);
-            uploadedImageBase64 = await compressImage(file);
+    document.getElementById('medImage').addEventListener('change', async (e) => {
+        if (e.target.files[0]) {
+            document.getElementById('imagePreview').src = URL.createObjectURL(e.target.files[0]);
+            document.getElementById('imagePreview').classList.remove('hidden');
+            document.getElementById('uploadPlaceholder').classList.add('hidden');
+            uploadedImageBase64 = await compressImage(e.target.files[0]);
         }
     });
 
-    document.getElementById('submitBtn').addEventListener('click', async (e) => {
-        e.preventDefault(); 
+    document.getElementById('submitBtn').addEventListener('click', async () => {
         const btn = document.getElementById('submitBtn');
-        const medName = document.getElementById('medName').value.trim();
-        const wilaya = document.getElementById('wilaya').value;
-        const notes = document.getElementById('notes').value;
-        const phone = document.getElementById('phoneNumber').value.trim();
-
+        const medName = document.getElementById('medName').value;
+        const phone = document.getElementById('phoneNumber').value;
+        
         if(!phone) return alert("رقم الهاتف ضروري");
-        if(!medName && !uploadedImageBase64) return alert("يجب كتابة اسم الدواء أو وضع صورة");
-
-        btn.innerText = "جاري الإرسال...";
-        btn.disabled = true;
-
+        if(!medName && !uploadedImageBase64) return alert("أدخل اسم الدواء أو صورته");
+        
+        btn.innerText = "جاري الإرسال..."; btn.disabled = true;
         try {
             const code = Math.floor(1000 + Math.random() * 9000).toString();
             await addDoc(collection(db, "requests"), {
-                medName: medName || "وصفة طبية (صورة)",
-                wilaya: wilaya || "غير محدد",
-                notes: notes,
-                phoneNumber: phone,
-                imageUrl: uploadedImageBase64,
-                secretCode: code,
-                status: "active",
-                createdAt: serverTimestamp()
+                medName: medName || "وصفة طبية", wilaya: document.getElementById('wilaya').value, 
+                notes: document.getElementById('notes').value, phoneNumber: phone, 
+                imageUrl: uploadedImageBase64, secretCode: code, status: "active", createdAt: serverTimestamp()
             });
-
             document.getElementById('formScreen').classList.add('hidden');
             document.getElementById('successScreen').classList.remove('hidden');
             document.getElementById('successScreen').classList.add('flex');
             document.getElementById('secretCodeDisplay').innerText = code;
-        } catch (e) {
-            console.error(e);
-            alert("حدث خطأ، حاول مرة أخرى");
-            btn.innerText = "إرسال الطلب";
-            btn.disabled = false;
-        }
+        } catch(e) { alert("خطأ، حاول مرة أخرى"); btn.disabled = false; btn.innerText = "إرسال الطلب"; }
     });
 }
 
 // ============================================================
-// 6. منطق تتبع الطلب (TRACK.HTML)
+// 7. منطق التتبع
 // ============================================================
 const trackBtn = document.getElementById('trackBtn');
 if (trackBtn) {
-    trackBtn.addEventListener('click', async (e) => {
-        e.preventDefault();
+    trackBtn.addEventListener('click', async () => {
         const phone = document.getElementById('trackPhone').value.trim();
         const code = document.getElementById('trackCode').value.trim();
-        
         if(!phone || !code) return alert("أدخل البيانات");
+        
         trackBtn.innerText = "جاري البحث...";
-        
-        const q = query(collection(db, "requests"), where("phoneNumber", "==", phone), where("secretCode", "==", code));
-        
-        onSnapshot(q, (snap) => {
-            if(snap.empty) { 
-                alert("لم يتم العثور على الطلب"); 
-                trackBtn.innerText = "عرض النتائج"; 
-                return; 
-            }
-            const reqDoc = snap.docs[0];
-            const reqData = reqDoc.data();
+        onSnapshot(query(collection(db, "requests"), where("phoneNumber", "==", phone), where("secretCode", "==", code)), (snap) => {
+            if(snap.empty) { alert("لم يتم العثور على الطلب"); trackBtn.innerText = "عرض النتائج"; return; }
+            const req = snap.docs[0];
             
             document.getElementById('loginSection').classList.add('hidden');
             document.getElementById('dashboardSection').classList.remove('hidden');
-            document.getElementById('orderTitle').innerText = reqData.medName;
+            document.getElementById('orderTitle').innerText = req.data().medName;
 
-            onSnapshot(query(collection(db, "responses"), where("requestId", "==", reqDoc.id)), async (respSnap) => {
-                const list = document.getElementById('offersList');
-                list.innerHTML = "";
-
-                if(respSnap.empty) {
-                    list.innerHTML = `<div class="bg-slate-50 rounded-2xl p-8 text-center border border-dashed border-slate-300"><p class="text-gray-400">لا توجد ردود حتى الآن</p></div>`;
-                    return;
-                }
-
-                for (const d of respSnap.docs) {
+            onSnapshot(query(collection(db, "responses"), where("requestId", "==", req.id)), (respSnap) => {
+                const list = document.getElementById('offersList'); list.innerHTML = "";
+                if(respSnap.empty) { list.innerHTML = `<div class="bg-slate-50 p-8 text-center text-gray-400 rounded-2xl border border-dashed">لا توجد ردود بعد</div>`; return; }
+                
+                respSnap.forEach(d => {
                     const r = d.data();
-                    const locId = `loc-${d.id}`;
-                    let pharmaRating = 0;
-                    try {
-                        const pharmaSnap = await getDoc(doc(db, "pharmacists", r.pharmaId));
-                        if(pharmaSnap.exists()) pharmaRating = pharmaSnap.data().rating || 0;
-                    } catch(e) {}
-
                     list.innerHTML += `
-                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mb-4 hover:shadow-md transition-all">
-                        <div class="flex justify-between items-start mb-3">
-                            <div>
-                                <h3 class="font-black text-slate-800 text-lg">${r.pharmaName}</h3>
-                                ${window.getStarRatingHTML(pharmaRating)}
-                                <p id="${locId}" class="text-xs text-gray-500 font-medium mt-1">📍 جارِ تحديد المنطقة...</p>
-                            </div>
-                            <span class="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-lg font-bold">متوفر</span>
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mb-4">
+                        <div class="flex justify-between">
+                            <h3 class="font-bold text-slate-800">${r.pharmaName}</h3>
+                            <span class="text-green-600 font-bold text-xs bg-green-50 px-2 py-1 rounded">متوفر</span>
                         </div>
-                        ${r.notes ? `<div class="bg-slate-50 p-3 rounded-xl border border-slate-100 mb-4 text-xs text-slate-600">💬 ${r.notes}</div>` : ''}
-                        
-                        <div class="grid grid-cols-2 gap-3 mb-4">
-                            <a href="tel:${r.phone}" onclick="window.markRequestAsTaken('${r.requestId}')" class="bg-slate-100 text-slate-700 hover:bg-slate-200 py-3 rounded-xl text-xs font-bold text-center transition">📞 اتصال</a>
-                            ${r.gpsLink ? `<a href="${r.gpsLink}" onclick="window.markRequestAsTaken('${r.requestId}')" target="_blank" class="bg-blue-50 text-blue-600 hover:bg-blue-100 py-3 rounded-xl text-xs font-bold text-center transition">🗺️ الخريطة</a>` : ''}
+                        <div class="text-xs text-gray-500 mt-1 mb-3">
+                            📍 الموقع: <span class="font-semibold text-slate-700">${r.wilaya || "غير محدد"}</span>
                         </div>
-
-                        <button onclick="window.openReviewModal('${r.pharmaId}', '${r.pharmaName}', '${r.wilaya}')" 
-                            class="btn-attention w-full font-bold py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2">
-                            <span class="text-xl">⭐</span>
-                            <span>تقييم الصيدلية</span>
-                        </button>
+                        ${r.notes ? `<div class="bg-slate-50 p-2 text-xs mb-3 text-slate-600 border rounded">💬 ${r.notes}</div>` : ''}
+                        <div class="grid grid-cols-2 gap-2 mb-3">
+                            <a href="tel:${r.phone}" onclick="window.markRequestAsTaken('${r.requestId}')" class="bg-gray-100 py-2 text-center rounded text-xs font-bold hover:bg-gray-200">📞 اتصال</a>
+                            ${r.gpsLink ? `<a href="${r.gpsLink}" target="_blank" onclick="window.markRequestAsTaken('${r.requestId}')" class="bg-blue-50 text-blue-600 py-2 text-center rounded text-xs font-bold hover:bg-blue-100">🗺️ فتح الخريطة</a>` : ''}
+                        </div>
+                        <button onclick="window.openReviewModal('${r.pharmaId}', '${r.pharmaName}', '${r.wilaya}')" class="w-full py-2 bg-orange-50 text-orange-600 font-bold rounded text-xs hover:bg-orange-100">⭐ تقييم الصيدلية</button>
                     </div>`;
-                    getLocationFromLink(r.gpsLink, locId);
-                }
+                });
             });
         });
     });
 }
 
 // ============================================================
-// 7. منطق تسجيل الدخول والإنشاء للصيدلي (seller-login.html)
+// 8. منطق تسجيل الدخول وإنشاء الحساب (المنقح والمصلح)
 // ============================================================
 const sellerLoginBtn = document.getElementById('sellerLoginBtn');
 if (sellerLoginBtn) {
-    // 7.1 تسجيل الدخول
-    sellerLoginBtn.addEventListener('click', async (e) => {
-        e.preventDefault(); 
+    
+    // --- (أ) تسجيل الدخول ---
+    sellerLoginBtn.addEventListener('click', async () => {
         const email = document.getElementById('loginEmail').value;
         const pass = document.getElementById('loginPassword').value;
         if(!email || !pass) return alert("أدخل البيانات");
         
-        sellerLoginBtn.innerText = "جاري الدخول...";
-        sellerLoginBtn.disabled = true;
+        sellerLoginBtn.innerText = "جاري التحقق..."; sellerLoginBtn.disabled = true;
 
         try {
-            await signInWithEmailAndPassword(auth, email, pass);
-            // التوجيه سيتم عبر onAuthStateChanged
+            const u = await signInWithEmailAndPassword(auth, email, pass);
+            
+            const snap = await getDoc(doc(db, "pharmacists", u.user.uid));
+            if(snap.exists()) {
+                const d = snap.data();
+                if(!d.isVerified) {
+                    await signOut(auth);
+                    alert("⚠️ حسابك قيد المراجعة.\nيرجى الانتظار حتى تقوم الإدارة بتفعيل حسابك.");
+                    sellerLoginBtn.innerText = "دخول للوحة التحكم"; sellerLoginBtn.disabled = false;
+                    return;
+                }
+                if(d.isBlocked) {
+                    await signOut(auth);
+                    alert("⛔ حسابك محظور.");
+                    sellerLoginBtn.innerText = "دخول للوحة التحكم"; sellerLoginBtn.disabled = false;
+                    return;
+                }
+            } else {
+                 // حالة نادرة: مسجل في Auth ولكن غير موجود في Firestore
+                 await signOut(auth);
+                 alert("خطأ في بيانات الحساب");
+                 sellerLoginBtn.innerText = "دخول للوحة التحكم"; sellerLoginBtn.disabled = false;
+            }
         } catch(e) {
             console.error(e);
-            alert("خطأ في الدخول: تأكد من الإيميل وكلمة السر");
-            sellerLoginBtn.innerText = "دخول للوحة التحكم";
-            sellerLoginBtn.disabled = false;
+            let msg = "خطأ في البريد أو كلمة السر";
+            if(e.code === 'auth/invalid-credential') msg = "المعلومات غير صحيحة";
+            alert(msg);
+            sellerLoginBtn.innerText = "دخول للوحة التحكم"; sellerLoginBtn.disabled = false;
         }
     });
 
-    // 7.2 إنشاء حساب جديد (مع تفعيل نظام الانتظار)
+    // --- (ب) إنشاء حساب جديد (حل مشكلة التعليق نهائياً) ---
     const authBtn = document.getElementById('authBtn');
     if (authBtn) {
-        authBtn.addEventListener('click', async (e) => {
-            e.preventDefault(); 
-            
+        authBtn.addEventListener('click', async () => {
             const btn = document.getElementById('authBtn');
             const email = document.getElementById('email').value;
             const pass = document.getElementById('password').value;
             const shopName = document.getElementById('shopName').value;
             const phone = document.getElementById('phone').value;
-            const gpsLink = document.getElementById('gpsLink').value;
             
-            if(!shopName || !phone || !gpsLink) return alert("جميع البيانات مطلوبة");
-            
-            btn.innerText = "جاري الإنشاء...";
+            // قراءة القيمة من الحقل المخفي الذي ملأه زر GPS في الـ HTML
+            const gpsLink = document.getElementById('gpsLink').value; 
+
+            // التحقق من أن جميع البيانات موجودة بما فيها الموقع
+            if(!shopName || !phone || !gpsLink || !email || !pass) {
+                return alert("🛑 تنبيه:\nيجب الضغط على الزر الأزرق (تحديد موقع الصيدلية) أولاً، وملء جميع الحقول.");
+            }
+            if(pass.length < 6) return alert("كلمة المرور يجب أن تكون 6 أحرف على الأقل");
+
+            btn.innerText = "جاري إنشاء الحساب..."; 
             btn.disabled = true;
 
             try {
-                // 1. إنشاء المستخدم في Authentication
+                // 1. محاولة جلب الاسم (مع Timeout لمدة 2 ثانية فقط لتجنب التعليق)
+                // إذا فشل، سيعود بكلمة "موقع GPS" ويكمل العملية
+                const locationName = await getCityNameFromLink(gpsLink);
+
+                // 2. إنشاء الحساب في Authentication
                 const cred = await createUserWithEmailAndPassword(auth, email, pass);
                 
-                // 2. حفظ البيانات مع حالة isVerified: false
+                // 3. حفظ البيانات في Firestore
                 await setDoc(doc(db, "pharmacists", cred.user.uid), {
-                    shopName, phone, email, gpsLink, 
-                    wilaya: "موقع GPS", 
-                    isVerified: false, // 🛑 غير مفعل افتراضياً
+                    shopName: shopName,
+                    phone: phone,
+                    email: email, 
+                    gpsLink: gpsLink,        
+                    wilaya: locationName,    
+                    isVerified: false,      
                     isBlocked: false, 
                     rating: 0, 
-                    reviewCount: 0,
+                    reviewCount: 0, 
                     createdAt: serverTimestamp()
                 });
 
-                // 3. 🛑 تسجيل الخروج فوراً لكي لا يدخل الداشبورد
+                // 4. خروج فوري
                 await signOut(auth);
 
-                alert("✅ تم إرسال طلب الانضمام بنجاح!\n\nحفاظاً على المصداقية، سيقوم فريق الإدارة بمراجعة بياناتك.\nسيتم تفعيل الحساب بعد الموافقة.");
+                // 5. رسالة النجاح
+                alert(`✅ تم إرسال طلبك بنجاح!
+                
+مرحباً: ${shopName}
+تم تسجيل الموقع: ${locationName}
+
+حسابك الآن قيد المراجعة من قبل فريق الدعم الفني.
+سيتم تفعيل الحساب قريباً.`);
+                
                 window.location.reload();
 
             } catch(e) { 
                 console.error(e);
-                alert("خطأ: " + e.message); 
-                btn.innerText = "إنشاء حساب جديد";
+                let msg = "حدث خطأ: " + e.message;
+                if(e.code === 'auth/email-already-in-use') msg = "البريد الإلكتروني مسجل مسبقاً!";
+                
+                alert(msg);
+                btn.innerText = "إنشاء حساب جديد"; 
                 btn.disabled = false;
             }
         });
     }
 
-    // 7.3 استعادة كلمة المرور
-    const btnSendReset = document.getElementById('btnSendReset');
-    if (btnSendReset) {
-        btnSendReset.addEventListener('click', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('forgotEmail').value;
-            if (!email) return alert("الرجاء كتابة البريد الإلكتروني");
-            
-            const originalText = btnSendReset.innerText;
-            btnSendReset.innerText = "جاري الإرسال...";
-            btnSendReset.disabled = true;
-
-            try {
-                await sendPasswordResetEmail(auth, email);
-                alert("تم إرسال رابط التعيين!");
-                if(window.closeForgotModal) window.closeForgotModal(); 
-            } catch (error) {
-                alert("خطأ: " + error.message);
-            } finally {
-                btnSendReset.innerText = originalText;
-                btnSendReset.disabled = false;
-            }
+    // --- استعادة كلمة السر ---
+    const btnReset = document.getElementById('btnSendReset');
+    if(btnReset) {
+        btnReset.addEventListener('click', async () => {
+            const mail = document.getElementById('forgotEmail').value;
+            if(!mail) return alert("اكتب الإيميل");
+            try { await sendPasswordResetEmail(auth, mail); alert("تم الإرسال"); window.closeForgotModal(); }
+            catch(e) { alert("خطأ في الإرسال"); }
         });
     }
 }
 
 // ============================================================
-// 8. منطق لوحة تحكم الصيدلي (dash.html)
+// 9. لوحة التحكم (Dashboard)
 // ============================================================
-async function initDashboard(user) {
-    currentPharmaId = user.uid;
-    
-    // مراقبة بيانات الصيدلي
-    onSnapshot(doc(db, "pharmacists", user.uid), (docSnap) => {
-        if (docSnap.exists()) {
-            currentPharmaData = docSnap.data();
+let currentPharmaData = null;
 
-            // فحص إضافي: إذا قام الأدمن بحظره وهو داخل الصفحة، يتم طرده
-            if(currentPharmaData.isVerified === false || currentPharmaData.isBlocked === true) {
-                 alert("⚠️ تم إيقاف حسابك من قبل الإدارة.");
-                 window.location.reload(); // سيقوم onAuthStateChanged بطرده
-                 return;
+async function initDashboard(user) {
+    const pharmaId = user.uid;
+    
+    // مراقبة الملف الشخصي
+    onSnapshot(doc(db, "pharmacists", pharmaId), (snap) => {
+        if(snap.exists()) {
+            currentPharmaData = snap.data();
+            
+            if(!currentPharmaData.isVerified || currentPharmaData.isBlocked) {
+                alert("تم إيقاف الحساب."); signOut(auth).then(()=>window.location.href="seller-login.html"); return;
             }
+
+            if(document.getElementById('headerShopName')) document.getElementById('headerShopName').innerText = currentPharmaData.shopName;
             
-            if(document.getElementById('headerShopName')) 
-                document.getElementById('headerShopName').innerText = currentPharmaData.shopName;
-            
-            if(document.getElementById('pharmaLocationDisplay') && currentPharmaData.gpsLink) {
-                getLocationFromLink(currentPharmaData.gpsLink, 'pharmaLocationDisplay');
+            const locEl = document.getElementById('pharmaLocationDisplay');
+            if(locEl) {
+                const displayLoc = currentPharmaData.wilaya || "موقع غير محدد";
+                const displayLink = currentPharmaData.gpsLink || "#";
+                let finalHref = displayLink;
+                if(displayLink.includes(",") && !displayLink.includes("http")) {
+                    finalHref = `https://www.google.com/maps?q=${displayLink.trim()}`;
+                }
+
+                locEl.innerHTML = `<a href="${finalHref}" target="_blank" class="hover:underline hover:text-blue-600 flex items-center gap-1">
+                    <span>📍</span> ${displayLoc} <span class="text-[9px] text-blue-500 font-bold">(عرض الخريطة)</span>
+                </a>`;
             }
 
             if(document.getElementById('pharmaStarsDisplay')) {
@@ -590,135 +523,93 @@ async function initDashboard(user) {
         hideLoader();
     });
 
-    performWeeklyCleanup();
-    startDashboardListeners();
-}
-
-const performWeeklyCleanup = async () => {
-    try {
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 7); 
-        const reqQuery = query(collection(db, "requests"), where("createdAt", "<", cutoff));
-        const reqSnap = await getDocs(reqQuery);
-        const batch = writeBatch(db);
-        reqSnap.forEach(d => batch.delete(d.ref));
-        await batch.commit();
-    } catch (e) { console.error("Cleanup error:", e); }
-};
-
-function startDashboardListeners() {
     let respondedIds = new Set();
-    
-    onSnapshot(query(collection(db, "responses"), where("pharmaId", "==", currentPharmaId)), (snap) => {
-        respondedIds.clear();
-        snap.forEach(d => respondedIds.add(d.data().requestId));
+    onSnapshot(query(collection(db, "responses"), where("pharmaId", "==", pharmaId)), (snap) => {
+        respondedIds.clear(); snap.forEach(d => respondedIds.add(d.data().requestId));
         if(document.getElementById('totalSalesCount')) document.getElementById('totalSalesCount').innerText = snap.size;
-        updateMyOffersList(snap);
+        const list = document.getElementById('myOffersList');
+        if(list) {
+            list.innerHTML = snap.empty ? `<p class="text-center text-xs text-gray-400 py-4">سجل الردود فارغ</p>` : "";
+            snap.forEach(d => list.innerHTML += `<div class="bg-white p-3 mb-2 rounded border border-gray-100 shadow-sm text-xs">✅ رددت على طلب <span class="font-bold">${d.data().requestId.substr(0,5)}</span> <span class="text-gray-400 float-left">${timeAgo(d.data().createdAt)}</span></div>`);
+        }
     });
 
     onSnapshot(query(collection(db, "requests"), orderBy("createdAt", "desc")), (snap) => {
         const list = document.getElementById('ordersList');
         if(!list) return;
         list.innerHTML = "";
-        let count = 0;
-        const now = new Date();
+        let count = 0; const now = new Date();
 
         snap.forEach(d => {
             const req = d.data();
-            let isExpired = false;
-            if (req.expiresAt) {
-                const expiryDate = req.expiresAt.toDate ? req.expiresAt.toDate() : new Date(req.expiresAt);
-                if (now > expiryDate) isExpired = true;
+            let expired = false;
+            if(req.expiresAt) {
+                const exp = req.expiresAt.toDate ? req.expiresAt.toDate() : new Date(req.expiresAt);
+                if(now > exp) expired = true;
             }
 
-            if (req.status !== 'completed' && !respondedIds.has(d.id) && !isExpired) {
+            if(req.status !== 'completed' && !respondedIds.has(d.id) && !expired) {
                 count++;
                 list.innerHTML += `
-                <div class="bg-white p-6 rounded-[2rem] shadow-lg border border-slate-100 relative overflow-hidden transition-all hover:shadow-xl">
-                    <div class="mb-4 space-y-2">
-                        <div class="flex justify-between items-start">
-                            <h3 class="font-black text-slate-800 text-xl leading-tight">${req.medName}</h3>
-                            <span class="text-[10px] text-gray-400 font-mono bg-slate-50 px-2 py-1 rounded-lg">${timeAgo(req.createdAt)}</span>
-                        </div>
-                        <p class="text-xs text-green-600 font-bold flex items-center gap-1">📍 <span class="text-slate-600">${req.wilaya}</span></p>
-                        <a href="tel:${req.phoneNumber}" class="block w-fit text-xs text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 hover:bg-blue-100 transition mt-2">
-                            📞 هاتف المريض: <span class="font-mono dir-ltr">${req.phoneNumber}</span>
-                        </a>
-                        ${req.notes ? `<div class="bg-orange-50 border-r-2 border-orange-200 p-3 rounded-l-xl mt-2"><p class="text-xs text-slate-600 leading-relaxed">📝 ${req.notes}</p></div>` : ''}
-                        ${req.interactionStarted ? `<div class="mt-1 text-[9px] text-red-500 font-bold animate-pulse">⏳ سيتم الحذف قريباً</div>` : ''}
+                <div class="bg-white p-5 rounded-2xl shadow border border-slate-100 mb-4">
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="font-bold text-lg text-slate-800">${req.medName}</h3>
+                        <span class="text-[10px] bg-slate-100 px-2 py-1 rounded text-gray-500">${timeAgo(req.createdAt)}</span>
                     </div>
-
-                    <div class="flex flex-col gap-3 mt-4">
-                        ${req.imageUrl ? `<button onclick="window.openLightbox('${req.imageUrl}')" class="w-full bg-slate-800 text-white py-3.5 rounded-xl text-xs font-bold shadow-md hover:bg-slate-700 transition flex items-center justify-center gap-2"><span>📷</span> عرض الوصفة</button>` : `<div class="w-full bg-slate-50 text-gray-400 py-3 rounded-xl text-[10px] font-bold text-center border border-slate-100">🚫 لا توجد صورة</div>`}
-                        <button onclick="window.respondToRequest('${d.id}')" class="w-full bg-green-600 text-white py-4 rounded-xl text-sm font-black shadow-lg shadow-green-200 hover:bg-green-700 hover:shadow-xl transition active:scale-[0.98] flex items-center justify-center gap-2"><span>✅</span> متوفر عندي</button>
+                    <div class="text-xs text-gray-500 mb-2">📍 ${req.wilaya}</div>
+                    <a href="tel:${req.phoneNumber}" class="inline-block bg-blue-50 text-blue-600 text-xs font-bold px-3 py-2 rounded mb-3">📞 هاتف: ${req.phoneNumber}</a>
+                    ${req.notes ? `<div class="bg-orange-50 text-orange-800 text-xs p-2 rounded mb-3 border-r-2 border-orange-200">${req.notes}</div>` : ''}
+                    
+                    <div class="grid grid-cols-1 gap-2">
+                        ${req.imageUrl ? `<button onclick="window.openLightbox('${req.imageUrl}')" class="bg-slate-700 text-white py-2 rounded text-xs font-bold">📷 عرض الوصفة</button>` : ''}
+                        <button onclick="window.respondToRequest('${d.id}')" class="bg-green-600 text-white py-3 rounded text-sm font-bold shadow-lg shadow-green-100 hover:bg-green-700">✅ الدواء متوفر</button>
                     </div>
                 </div>`;
             }
         });
-        if(count === 0) list.innerHTML = `<div class="text-center py-20 text-gray-300 text-xs uppercase font-bold tracking-widest">لا توجد طلبات جديدة</div>`;
+        if(count === 0) list.innerHTML = `<div class="text-center py-20 text-gray-400">لا توجد طلبات جديدة</div>`;
     });
 }
 
-function updateMyOffersList(snap) {
-    const list = document.getElementById('myOffersList');
-    if(!list) return;
-    list.innerHTML = "";
-    if(snap.empty) { list.innerHTML = `<div class="text-center py-10 text-gray-300 text-xs border border-dashed border-gray-200 rounded-[2rem] bg-white">سجل ردودك فارغ</div>`; return; }
-    snap.forEach(d => {
-        const r = d.data();
-        list.innerHTML += `<div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm mb-2 opacity-75"><p class="text-xs font-bold text-gray-800">رد على طلب (ID: ${r.requestId.substr(0,5)})</p><span class="text-[10px] text-gray-400">${timeAgo(r.createdAt)}</span></div>`;
-    });
-}
-
-window.logout = () => { if(confirm("تسجيل الخروج؟")) { signOut(auth).then(() => window.location.href = "seller-login.html"); } };
+window.logout = () => { if(confirm("خروج؟")) signOut(auth).then(() => window.location.href = "seller-login.html"); };
 
 window.updatePharmaLocation = () => {
     const btn = document.getElementById('btnUpdateLoc');
-    if(!navigator.geolocation) return alert("المتصفح لا يدعم GPS");
+    if(!navigator.geolocation) return alert("الجهاز لا يدعم GPS");
     btn.innerHTML = "جاري التحديد..."; btn.disabled = true;
     navigator.geolocation.getCurrentPosition(async (pos) => {
         const link = `https://www.google.com/maps?q=${pos.coords.latitude},${pos.coords.longitude}`;
         await updateDoc(doc(db, "pharmacists", currentPharmaId), { gpsLink: link });
-        alert("تم تحديث موقعك بنجاح ✅"); 
+        alert("تم تحديث موقعك ✅"); 
         btn.innerHTML = "📍 تحديث تلقائي (GPS)"; btn.disabled = false;
-        getLocationFromLink(link, 'pharmaLocationDisplay');
     }, (err) => { alert("فشل تحديد الموقع"); btn.innerHTML = "📍 تحديث تلقائي (GPS)"; btn.disabled = false; }, { enableHighAccuracy: true });
 };
 
 window.updatePharmaPhone = async () => { const phone = document.getElementById('editPhone').value; if(phone) { await updateDoc(doc(db, "pharmacists", currentPharmaId), { phone: phone }); alert("تم تغيير الرقم ✅"); } };
 
 window.changePharmaPassword = async () => {
-    const oldPass = document.getElementById('oldPass').value;
-    const newPass = document.getElementById('newPass').value;
-    const confirmPass = document.getElementById('confirmPass').value;
-    if(!oldPass || !newPass) return alert("الرجاء ملء جميع الحقول");
-    if(newPass !== confirmPass) return alert("كلمات المرور الجديدة غير متطابقة");
-    const user = auth.currentUser;
+    const oldP = document.getElementById('oldPass').value;
+    const newP = document.getElementById('newPass').value;
+    const cfmP = document.getElementById('confirmPass').value;
+    if(!oldP || !newP || newP !== cfmP) return alert("تأكد من البيانات");
     try {
-        const cred = EmailAuthProvider.credential(user.email, oldPass);
-        await reauthenticateWithCredential(user, cred);
-        await updatePassword(user, newPass);
-        alert("تم تغيير كلمة المرور بنجاح ✅");
-    } catch(e) { alert("كلمة المرور الحالية غير صحيحة ❌"); }
+        const cred = EmailAuthProvider.credential(auth.currentUser.email, oldP);
+        await reauthenticateWithCredential(auth.currentUser, cred);
+        await updatePassword(auth.currentUser, newP);
+        alert("تم تغيير كلمة المرور"); document.getElementById('passFieldsContainer').classList.add('hidden');
+    } catch(e) { alert("كلمة السر القديمة خطأ"); }
 };
 
-window.respondToRequest = async (requestId) => {
-    const notes = prompt("ملاحظة للمريض (مثال: السعر، الكمية، أو 'تعال الآن'):");
-    if(notes === null) return; 
+window.respondToRequest = async (rid) => {
+    const note = prompt("ملاحظة للمريض (السعر/تفاصيل):");
+    if(note === null) return;
     try {
-        await addDoc(collection(db, "responses"), { requestId: requestId, pharmaId: currentPharmaId, pharmaName: currentPharmaData.shopName, phone: currentPharmaData.phone, wilaya: currentPharmaData.wilaya, baladiya: currentPharmaData.baladiya || "غير محدد", gpsLink: currentPharmaData.gpsLink, notes: notes, createdAt: serverTimestamp() });
-        alert("تم إرسال ردك للمريض! ✅");
-    } catch(e) { console.error(e); alert("حدث خطأ في الإرسال"); }
+        await addDoc(collection(db, "responses"), {
+            requestId: rid, pharmaId: auth.currentUser.uid,
+            pharmaName: currentPharmaData.shopName, phone: currentPharmaData.phone,
+            wilaya: currentPharmaData.wilaya, gpsLink: currentPharmaData.gpsLink,
+            notes: note, createdAt: serverTimestamp()
+        });
+        alert("تم الإرسال!");
+    } catch(e) { alert("حدث خطأ"); }
 };
-
-// ============================================================
-// 9. لوحة تحكم الأدمن (admin.html Logic)
-// ============================================================
-// يتم التعامل مع منطق الأدمن في ملف admin.html بشكل مستقل
-// ولكن في حال تم دمج الكود، هذا الجزء يدعم صفحة الأدمن
-
-if (isAdminPage) {
-    // كود الأدمن موجود في admin.html كما أرسلته سابقاً، 
-    // ولكن للتأكد من عدم حدوث تضارب، لن أضع كوداً مكرراً هنا 
-    // لأنك تستخدم logic.js في الصفحات العامة أيضاً.
-}
