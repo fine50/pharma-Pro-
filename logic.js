@@ -50,7 +50,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// تثبيت الجلسة حتى بعد تحديث الصفحة
+// تثبيت الجلسة حتى بعد تحديث الصفحة (حل الطرد النهائي)
 await setPersistence(auth, browserLocalPersistence);
 
 // ============================================================
@@ -198,7 +198,47 @@ window.getStarRatingHTML = (rating) => {
 };
 
 // ============================================================
-// 6. تسجيل الدخول للصيدلي
+// 6. أدوات الموقع الجغرافي (GPS + Reverse Geocoding)
+// ============================================================
+async function reverseGeocode(lat, lng) {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
+    );
+    const data = await response.json();
+    const a = data.address || {};
+    const road = a.road || a.pedestrian || a.footway || "";
+    const suburb = a.suburb || a.neighbourhood || "";
+    const city = a.city || a.town || a.village || a.county || "";
+    const state = a.state || "";
+
+    const parts = [];
+    if (road) parts.push(road);
+    if (suburb) parts.push(suburb);
+    if (city) parts.push(city);
+    if (state && state !== city) parts.push(state);
+
+    return parts.join("، ");
+  } catch (e) {
+    console.error("Reverse geocode error:", e);
+    return "";
+  }
+}
+
+async function getLocationTextFromLink(gpsLink) {
+  if (!gpsLink || !gpsLink.includes("q=")) return "";
+  try {
+    const coords = gpsLink.split("q=")[1].split(",");
+    const lat = coords[0];
+    const lng = coords[1];
+    return await reverseGeocode(lat, lng);
+  } catch {
+    return "";
+  }
+}
+
+// ============================================================
+// 7. تسجيل الدخول للصيدلي
 // ============================================================
 const sellerLoginBtn = document.getElementById("sellerLoginBtn");
 if (sellerLoginBtn) {
@@ -210,7 +250,6 @@ if (sellerLoginBtn) {
     sellerLoginBtn.innerText = "جاري الدخول...";
     try {
       await signInWithEmailAndPassword(auth, email, pass);
-      // التحويل يتم تلقائياً عبر onAuthStateChanged
     } catch (e) {
       console.error(e);
       alert("خطأ في الدخول");
@@ -220,7 +259,7 @@ if (sellerLoginBtn) {
 }
 
 // ============================================================
-// 7. إنشاء حساب صيدلي (يبقى معلق)
+// 8. إنشاء حساب صيدلي (يبقى معلق + GPS دقيق + عنوان نصي)
 // ============================================================
 const authBtn = document.getElementById("authBtn");
 if (authBtn) {
@@ -230,36 +269,64 @@ if (authBtn) {
     const pass = document.getElementById("password").value;
     const shopName = document.getElementById("shopName").value;
     const phone = document.getElementById("phone").value;
-    const gpsLink = document.getElementById("gpsLink").value;
 
-    if (!email || !pass || !shopName || !phone || !gpsLink)
+    if (!email || !pass || !shopName || !phone)
       return alert("جميع البيانات مطلوبة");
 
-    btn.innerText = "جاري الإنشاء...";
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      await setDoc(doc(db, "pharmacists", cred.user.uid), {
-        shopName,
-        phone,
-        email,
-        gpsLink,
-        wilaya: "موقع GPS",
-        role: "pharmacist",
-        isVerified: false,
-        isBlocked: false,
-        createdAt: serverTimestamp()
-      });
-      alert("تم التسجيل ✅ حسابك قيد المراجعة");
-      window.location.reload();
-    } catch (e) {
-      alert("خطأ: " + e.message);
-      btn.innerText = "إنشاء حساب جديد";
-    }
+    if (!navigator.geolocation)
+      return alert("المتصفح لا يدعم تحديد الموقع");
+
+    btn.innerText = "جاري تحديد الموقع...";
+    btn.disabled = true;
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const gpsLink = `https://www.google.com/maps?q=${lat},${lng}`;
+          const addressText = await reverseGeocode(lat, lng);
+
+          btn.innerText = "جاري إنشاء الحساب...";
+
+          const cred = await createUserWithEmailAndPassword(auth, email, pass);
+          await setDoc(doc(db, "pharmacists", cred.user.uid), {
+            shopName,
+            phone,
+            email,
+            gpsLink,
+            lat,
+            lng,
+            addressText: addressText || "موقع غير محدد بدقة",
+            role: "pharmacist",
+            isVerified: false,
+            isBlocked: false,
+            rating: 0,
+            reviewCount: 0,
+            createdAt: serverTimestamp()
+          });
+
+          alert("تم التسجيل ✅ حسابك قيد المراجعة");
+          window.location.reload();
+        } catch (e) {
+          console.error(e);
+          alert("خطأ: " + e.message);
+          btn.innerText = "إنشاء حساب جديد";
+          btn.disabled = false;
+        }
+      },
+      () => {
+        alert("فشل تحديد الموقع، يرجى السماح بالـ GPS");
+        btn.innerText = "إنشاء حساب جديد";
+        btn.disabled = false;
+      },
+      { enableHighAccuracy: true }
+    );
   });
 }
 
 // ============================================================
-// 8. استرجاع كلمة المرور
+// 9. استرجاع كلمة المرور
 // ============================================================
 const btnSendReset = document.getElementById("btnSendReset");
 if (btnSendReset) {
@@ -285,7 +352,7 @@ if (btnSendReset) {
 }
 
 // ============================================================
-// 9. منطق صفحة المريض (ORDER.HTML)
+// 10. منطق صفحة المريض (ORDER.HTML)
 // ============================================================
 const compressImage = (file) => {
   return new Promise((resolve) => {
@@ -374,7 +441,7 @@ if (document.getElementById("medImage")) {
 }
 
 // ============================================================
-// 10. تتبع الطلب (TRACK.HTML)
+// 11. تتبع الطلب (TRACK.HTML)
 // ============================================================
 const trackBtn = document.getElementById("trackBtn");
 if (trackBtn) {
@@ -436,7 +503,7 @@ if (trackBtn) {
                 <div>
                   <h3 class="font-black text-slate-800 text-lg">${r.pharmaName}</h3>
                   ${starsHTML}
-                  <p id="${locId}" class="text-xs text-gray-500 font-medium mt-1">📍 جارِ تحديد المنطقة...</p>
+                  <p id="${locId}" class="text-xs text-gray-500 font-medium mt-1">📍 جارِ تحديد العنوان...</p>
                 </div>
                 <span class="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-lg font-bold">متوفر</span>
               </div>
@@ -455,14 +522,20 @@ if (trackBtn) {
                 }
               </div>
 
-              <button onclick="window.openReviewModal('${r.pharmaId}', '${r.pharmaName}', '${r.wilaya}')" 
+              <button onclick="window.openReviewModal('${r.pharmaId}', '${r.pharmaName}', '')" 
                 class="btn-attention w-full font-bold py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2">
                 <span class="text-xl">⭐</span>
                 <span>تقييم الصيدلية</span>
               </button>
             </div>`;
 
-            getLocationFromLink(r.gpsLink, locId);
+            const addressText = r.addressText || (await getLocationTextFromLink(r.gpsLink));
+            const elem = document.getElementById(locId);
+            if (elem && addressText) {
+              elem.innerText = "📍 " + addressText;
+              elem.classList.remove("text-gray-500");
+              elem.classList.add("text-slate-800", "font-bold");
+            }
           }
         }
       );
@@ -471,39 +544,8 @@ if (trackBtn) {
 }
 
 // ============================================================
-// 11. أدوات مساعدة
+// 12. أدوات مساعدة عامة
 // ============================================================
-async function getLocationFromLink(gpsLink, elementId) {
-  if (!gpsLink || !gpsLink.includes("q=")) return;
-  try {
-    const coords = gpsLink.split("q=")[1].split(",");
-    const lat = coords[0];
-    const lng = coords[1];
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
-    );
-    const data = await response.json();
-    const city =
-      data.address.city ||
-      data.address.town ||
-      data.address.village ||
-      data.address.county ||
-      "";
-    const suburb = data.address.suburb || data.address.neighbourhood || "";
-    const locationText = suburb ? `${city} - ${suburb}` : city;
-    const elem = document.getElementById(elementId);
-    if (elem && locationText) {
-      elem.innerText = locationText;
-      if (elem.classList.contains("text-gray-500")) {
-        elem.classList.add("text-slate-800", "font-bold");
-        elem.classList.remove("text-gray-500");
-      }
-    }
-  } catch (error) {
-    console.error("Loc Error", error);
-  }
-}
-
 window.openLightbox = (src) => {
   const box = document.getElementById("imgLightbox");
   const img = document.getElementById("lightboxImg");
@@ -544,17 +586,17 @@ window.markRequestAsTaken = async (requestId) => {
 };
 
 // ============================================================
-// 12. منطق التقييم
+// 13. منطق التقييم
 // ============================================================
 let currentReviewPharmaId = null;
 let currentRating = 0;
 
-window.openReviewModal = (pharmaId, name, wilaya) => {
+window.openReviewModal = (pharmaId, name) => {
   currentReviewPharmaId = pharmaId;
   const modal = document.getElementById("reviewModal");
   if (!modal) return;
   document.getElementById("reviewSellerName").innerText = name || "صيدلية";
-  document.getElementById("reviewSellerWilaya").innerText = wilaya || "";
+  document.getElementById("reviewSellerWilaya").innerText = "";
   currentRating = 0;
   window.setStars(0);
   const textArea = document.getElementById("reviewText");
@@ -646,7 +688,7 @@ window.submitReview = async () => {
 };
 
 // ============================================================
-// 13. لوحة تحكم الصيدلي (DASH.HTML)
+// 14. لوحة تحكم الصيدلي (DASH.HTML)
 // ============================================================
 let currentPharmaId = null;
 let currentPharmaData = null;
@@ -662,14 +704,10 @@ async function initDashboard(user) {
         document.getElementById("headerShopName").innerText =
           currentPharmaData.shopName;
 
-      if (
-        document.getElementById("pharmaLocationDisplay") &&
-        currentPharmaData.gpsLink
-      ) {
-        getLocationFromLink(
-          currentPharmaData.gpsLink,
-          "pharmaLocationDisplay"
-        );
+      if (document.getElementById("pharmaLocationDisplay")) {
+        const text = currentPharmaData.addressText || "";
+        document.getElementById("pharmaLocationDisplay").innerText =
+          text ? "📍 " + text : "📍 موقع غير محدد";
       }
 
       if (document.getElementById("pharmaStarsDisplay")) {
@@ -841,6 +879,7 @@ function updateMyOffersList(snap) {
   });
 }
 
+// تحديث موقع الصيدلي (GPS + عنوان نصي دقيق)
 window.updatePharmaLocation = () => {
   const btn = document.getElementById("btnUpdateLoc");
   if (!navigator.geolocation) return alert("المتصفح لا يدعم GPS");
@@ -848,12 +887,33 @@ window.updatePharmaLocation = () => {
   btn.disabled = true;
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
-      const link = `https://www.google.com/maps?q=${pos.coords.latitude},${pos.coords.longitude}`;
-      await updateDoc(doc(db, "pharmacists", currentPharmaId), { gpsLink: link });
-      alert("تم تحديث موقعك بنجاح ✅");
-      btn.innerHTML = "📍 تحديث تلقائي (GPS)";
-      btn.disabled = false;
-      getLocationFromLink(link, "pharmaLocationDisplay");
+      try {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const link = `https://www.google.com/maps?q=${lat},${lng}`;
+        const addressText = await reverseGeocode(lat, lng);
+
+        await updateDoc(doc(db, "pharmacists", currentPharmaId), {
+          gpsLink: link,
+          lat,
+          lng,
+          addressText: addressText || "موقع غير محدد بدقة"
+        });
+
+        alert("تم تحديث موقعك بنجاح ✅");
+        btn.innerHTML = "📍 تحديث تلقائي (GPS)";
+        btn.disabled = false;
+
+        if (document.getElementById("pharmaLocationDisplay")) {
+          document.getElementById("pharmaLocationDisplay").innerText =
+            "📍 " + (addressText || "موقع غير محدد");
+        }
+      } catch (e) {
+        console.error(e);
+        alert("حدث خطأ أثناء تحديث الموقع");
+        btn.innerHTML = "📍 تحديث تلقائي (GPS)";
+        btn.disabled = false;
+      }
     },
     () => {
       alert("فشل تحديد الموقع");
@@ -910,10 +970,8 @@ window.respondToRequest = async (requestId) => {
       pharmaId: currentPharmaId,
       pharmaName: currentPharmaData.shopName,
       phone: currentPharmaData.phone,
-      wilaya: currentPharmaData.wilaya,
-      baladiya: currentPharmaData.baladiya || "غير محدد",
       gpsLink: currentPharmaData.gpsLink,
-      notes: notes,
+      addressText: currentPharmaData.addressText || "",
       createdAt: serverTimestamp()
     });
     alert("تم إرسال ردك للمريض! ✅");
@@ -924,15 +982,18 @@ window.respondToRequest = async (requestId) => {
 };
 
 // ============================================================
-// 14. لوحة تحكم الأدمن (ADMIN.HTML)
+// 15. لوحة تحكم الأدمن (ADMIN.HTML)
 // ============================================================
 async function initAdminDashboard(user) {
   const list = document.getElementById("pendingPharmaciesList");
+  const verifiedList = document.getElementById("verifiedPharmaciesList");
+
   if (!list) {
     hideLoader();
     return;
   }
 
+  // الطلبات المعلقة
   onSnapshot(
     query(collection(db, "pharmacists"), where("isVerified", "==", false)),
     (snap) => {
@@ -948,8 +1009,14 @@ async function initAdminDashboard(user) {
         list.innerHTML += `
         <div class="bg-white p-5 rounded-2xl shadow border border-slate-100 mb-4">
           <h3 class="font-black text-slate-800 text-lg mb-1">${p.shopName}</h3>
-          <p class="text-xs text-gray-500 mb-1">📞 ${p.phone}</p>
-          <p class="text-xs text-gray-500 mb-3">📧 ${p.email}</p>
+          <p class="text-xs text-gray-600 mb-1">📞 ${p.phone}</p>
+          <p class="text-xs text-gray-600 mb-1">📧 ${p.email}</p>
+          <p class="text-xs text-slate-800 font-bold mb-2">📍 ${p.addressText || "موقع غير محدد"}</p>
+          ${
+            p.gpsLink
+              ? `<a href="${p.gpsLink}" target="_blank" class="inline-block mb-3 text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-bold">🗺️ فتح في الخريطة</a>`
+              : ""
+          }
           <div class="flex gap-3">
             <button onclick="window.approvePharma('${d.id}')" class="flex-1 bg-green-600 text-white py-2 rounded-xl font-bold">✅ قبول</button>
             <button onclick="window.rejectPharma('${d.id}')" class="flex-1 bg-red-500 text-white py-2 rounded-xl font-bold">❌ رفض</button>
@@ -960,6 +1027,40 @@ async function initAdminDashboard(user) {
       hideLoader();
     }
   );
+
+  // الصيادلة المقبولون
+  if (verifiedList) {
+    onSnapshot(
+      query(collection(db, "pharmacists"), where("isVerified", "==", true)),
+      (snap) => {
+        verifiedList.innerHTML = "";
+        if (snap.empty) {
+          verifiedList.innerHTML = `<div class="text-center text-gray-400 text-sm">لا توجد حسابات مفعلة</div>`;
+          return;
+        }
+
+        snap.forEach((d) => {
+          const p = d.data();
+          verifiedList.innerHTML += `
+          <div class="bg-white p-5 rounded-2xl shadow border border-slate-100 mb-4">
+            <h3 class="font-black text-slate-800 text-lg mb-1">${p.shopName}</h3>
+            <p class="text-xs text-gray-600 mb-1">📞 ${p.phone}</p>
+            <p class="text-xs text-gray-600 mb-1">📧 ${p.email}</p>
+            <p class="text-xs text-slate-800 font-bold mb-2">📍 ${p.addressText || "موقع غير محدد"}</p>
+            ${
+              p.gpsLink
+                ? `<a href="${p.gpsLink}" target="_blank" class="inline-block mb-2 text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-bold">🗺️ فتح في الخريطة</a>`
+                : ""
+            }
+            <div class="flex gap-3 mt-2">
+              <button onclick="window.blockPharma('${d.id}')" class="flex-1 bg-orange-500 text-white py-2 rounded-xl font-bold">⛔ حظر</button>
+              <button onclick="window.deletePharma('${d.id}')" class="flex-1 bg-red-600 text-white py-2 rounded-xl font-bold">🗑 حذف</button>
+            </div>
+          </div>`;
+        });
+      }
+    );
+  }
 }
 
 window.approvePharma = async (id) => {
@@ -976,4 +1077,23 @@ window.rejectPharma = async (id) => {
     isBlocked: true
   });
   alert("تم رفض الحساب ❌");
+};
+
+window.blockPharma = async (id) => {
+  if (!confirm("هل تريد حظر هذا الحساب؟")) return;
+  await updateDoc(doc(db, "pharmacists", id), {
+    isBlocked: true
+  });
+  alert("تم حظر الحساب ⛔");
+};
+
+window.deletePharma = async (id) => {
+  if (!confirm("⚠️ هل أنت متأكد من حذف هذا الحساب نهائياً؟")) return;
+  try {
+    await deleteDoc(doc(db, "pharmacists", id));
+    alert("تم حذف الحساب 🗑");
+  } catch (e) {
+    console.error(e);
+    alert("حدث خطأ أثناء الحذف");
+  }
 };
