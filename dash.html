@@ -44,7 +44,7 @@
         <div class="absolute bottom-[-5%] left-[-5%] w-[350px] h-[350px] bg-blue-50 rounded-full blur-[90px]"></div>
     </div>
 
-    <!-- Header المعدل ليشمل التقييم -->
+    <!-- Header -->
     <header class="glass-header sticky top-0 z-50 pt-4 pb-3">
         <div class="max-w-md mx-auto px-5 flex justify-between items-start">
             <div class="flex flex-col w-full">
@@ -56,17 +56,15 @@
                     </button>
                 </div>
 
-                <!-- الصف الثاني: معلومات الصيدلي + التقييم + الموقع -->
+                <!-- الصف الثاني: معلومات الصيدلي -->
                 <div class="flex flex-col gap-1">
                     <div class="flex items-center gap-2">
                         <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                         <p class="text-sm font-bold text-slate-800" id="headerShopName">جاري التحميل...</p>
                     </div>
 
-                    <!-- مكان ظهور النجوم والتقييم (جديد) -->
-                    <div id="pharmaStarsDisplay" class="flex items-center mt-0.5 min-h-[20px]">
-                        <!-- سيتم حقن النجوم هنا بواسطة JS -->
-                    </div>
+                    <!-- النجوم -->
+                    <div id="pharmaStarsDisplay" class="flex items-center mt-0.5 min-h-[20px]"></div>
                     
                     <!-- الموقع -->
                     <div class="flex items-center gap-1.5 text-xs text-blue-600 font-bold bg-blue-50 w-fit px-2 py-1 rounded-lg mt-1">
@@ -83,25 +81,31 @@
     <!-- Main Content -->
     <main class="flex-1 overflow-y-auto pb-32 max-w-md mx-auto w-full p-4 hide-scrollbar">
         
-        <!-- 1. قسم الطلبات (السوق) -->
+        <!-- 1. قسم الطلبات (السوق - Market) -->
         <section id="view-market" class="block space-y-4 animate-slide-up">
             <h2 class="text-xs font-black text-gray-400 tracking-widest uppercase px-1 mb-4 flex items-center justify-between">
                 <span>الطلبات المباشرة</span>
                 <span class="w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
             </h2>
             
+            <!-- هنا ستظهر الطلبات القادمة من المرضى -->
             <div id="ordersList" class="space-y-5">
-                <div class="text-center py-20 text-gray-300 animate-pulse text-xs uppercase font-bold tracking-widest">جاري الاتصال بالسيرفر...</div>
+                <div class="text-center py-20 text-gray-300 animate-pulse text-xs uppercase font-bold tracking-widest">
+                    جاري الاتصال بالسيرفر...<br>
+                    انتظر لحظة لجلب الطلبات
+                </div>
             </div>
         </section>
 
-        <!-- 2. قسم ردودي -->
+        <!-- 2. قسم ردودي (Offers) -->
         <section id="view-offers" class="hidden space-y-4 animate-slide-up">
             <h2 class="text-xs font-black text-gray-400 tracking-widest uppercase px-1">ردودي <span class="text-green-600">السابقة</span></h2>
-            <div id="myOffersList" class="space-y-3"></div>
+            <div id="myOffersList" class="space-y-3">
+                <p class="text-center text-gray-400 text-xs py-10">لم تقم بأي ردود بعد</p>
+            </div>
         </section>
 
-        <!-- 3. قسم الإنجازات -->
+        <!-- 3. قسم الإنجازات (Sales) -->
         <section id="view-sales" class="hidden space-y-5 animate-slide-up">
             <div class="bg-slate-800 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
                 <div class="absolute -top-10 -right-10 w-32 h-32 bg-green-600 rounded-full blur-[60px] opacity-20"></div>
@@ -111,9 +115,10 @@
             </div>
         </section>
         
-        <!-- 4. قسم الإعدادات -->
+        <!-- 4. قسم الإعدادات (Settings) -->
         <section id="view-settings" class="hidden space-y-6 animate-slide-up">
-            <!-- أ) تحديث الموقع GPS -->
+            
+            <!-- تحديث الموقع -->
             <div class="bg-slate-800 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden mb-6">
                 <div class="absolute -top-10 -left-10 w-32 h-32 bg-blue-600 rounded-full blur-[60px] opacity-20"></div>
                 <h3 class="font-black text-white mb-4 flex items-center gap-2 text-sm uppercase">موقع <span class="text-blue-400 italic">الصيدلية</span></h3>
@@ -125,7 +130,7 @@
                 </div>
             </div>
 
-            <!-- ب) تغيير كلمة المرور -->
+            <!-- تغيير كلمة المرور -->
             <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
                 <button onclick="togglePasswordFields()" class="w-full flex justify-between items-center group">
                     <h3 class="font-black text-slate-800 text-sm uppercase group-hover:text-green-600 transition-colors">تغيير كلمة <span class="text-green-600 italic group-hover:text-slate-800">المرور</span></h3>
@@ -139,7 +144,7 @@
                 </div>
             </div>
 
-            <!-- ج) تحديث الهاتف -->
+            <!-- تحديث الهاتف -->
             <div class="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-3">
                 <input type="tel" id="editPhone" placeholder="رقم الهاتف الجديد" class="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-green-500 transition-all font-mono" dir="ltr">
                 <button onclick="window.updatePharmaPhone()" class="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-bold hover:bg-slate-900 transition">تعديل</button>
@@ -166,6 +171,7 @@
         <img id="lightboxImg" src="" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl">
     </div>
 
+    <!-- دوال التبديل (مهمة لتعمل الأزرار السفلية) -->
     <script>
         function switchTab(tabName) {
             ['market', 'offers', 'sales', 'settings'].forEach(id => {
@@ -191,6 +197,7 @@
         }
     </script>
     
+    <!-- ربط ملف المنطق - تأكد من وجود logic.js في نفس المجلد -->
     <script type="module" src="./logic.js"></script>
 </body>
 </html>
