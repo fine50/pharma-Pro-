@@ -166,7 +166,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, getDocs, getDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDKuuVspUv3_IzjxQFMqG-2JucCkgt4pvY",
@@ -190,6 +190,7 @@
         const dashboard = document.getElementById('adminDashboard');
         const errorMsg = document.getElementById('loginError');
 
+        // تسجيل الدخول
         btnLogin.addEventListener('click', async () => {
             const email = document.getElementById('adminEmail').value;
             const pass = document.getElementById('adminPass').value;
@@ -204,8 +205,10 @@
             }
         });
 
+        // مراقبة حالة الدخول
         onAuthStateChanged(auth, (user) => {
-            if (user && user.email === "david_hassan5@hotmail.com") {
+            // التحقق من البريد الإلكتروني مع تجاهل حالة الأحرف
+            if (user && user.email.toLowerCase() === "david_hassan5@hotmail.com") {
                 loginScreen.classList.add('hidden');
                 dashboard.classList.remove('hidden');
                 dashboard.classList.add('flex');
@@ -226,16 +229,26 @@
         let state = { pending: [], active: [], orders: [] };
 
         function startAdminListeners() {
+            // 1. طلبات الانتظار (isVerified == false)
             onSnapshot(query(collection(db, "pharmacists"), where("isVerified", "==", false)), (snap) => {
                 state.pending = snap.docs.map(d => ({ id: d.id, data: d.data() }));
                 updateUI('pending', state.pending);
+            }, (error) => {
+                console.error("خطأ في جلب البيانات المعلقة:", error);
             });
+
+            // 2. الصيادلة النشطين (isVerified == true)
             onSnapshot(query(collection(db, "pharmacists"), where("isVerified", "==", true)), (snap) => {
                 state.active = snap.docs.map(d => ({ id: d.id, data: d.data() }));
                 updateUI('sellers', state.active);
             });
+
+            // 3. الطلبات (تشمل active و pending لضمان ظهور كل شيء للأدمن)
             onSnapshot(collection(db, "requests"), (snap) => {
-                const activeReqs = snap.docs.filter(d => d.data().status === 'active');
+                // تصفية الطلبات لعرض النشطة والمعلقة فقط (وليس المحذوفة أو المكتملة إن وجدت)
+                const activeReqs = snap.docs.filter(d => 
+                    d.data().status === 'active' || d.data().status === 'pending'
+                );
                 state.orders = activeReqs.map(d => ({ id: d.id, data: d.data() }));
                 updateUI('orders', state.orders);
             });
@@ -245,8 +258,9 @@
             const term = document.getElementById('globalAdminSearch').value.toLowerCase();
             const filtered = items.filter(item => {
                 const d = item.data;
-                if(type === 'orders') return (d.medName + d.phoneNumber).toLowerCase().includes(term);
-                return (d.shopName + d.phone + (d.wilaya||"")).toLowerCase().includes(term);
+                // حماية ضد الحقول الفارغة عند البحث
+                if(type === 'orders') return (d.medicineName || d.medName || "" + d.phoneNumber || "").toLowerCase().includes(term);
+                return ((d.shopName || "") + (d.phone || "") + (d.wilaya || "")).toLowerCase().includes(term);
             });
 
             if(type === 'pending') document.getElementById('statPending').innerText = items.length;
@@ -263,24 +277,47 @@
                 const id = item.id;
                 const d = item.data;
 
+                // التعامل مع البيانات الفارغة
+                const shopName = d.shopName || "اسم غير متوفر";
+                const phone = d.phone || "---";
+                const wilaya = d.wilaya || "";
+
+                // زر الـ GPS
+                const gpsBtn = d.gpsLink 
+                    ? `<a href="${d.gpsLink}" target="_blank" onclick="event.stopPropagation()" class="text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded hover:bg-blue-100 flex w-fit items-center gap-1 mt-1 border border-blue-200">📍 موقع الصيدلية</a>` 
+                    : `<span class="text-[10px] text-gray-300 mt-1 block">بدون موقع</span>`;
+
                 if (type === 'pending') {
+                    // قائمة الانتظار
                     list.innerHTML += `
-                        <div class="bg-white p-4 rounded-2xl border border-yellow-100 shadow-sm flex justify-between items-center mb-2">
-                            <div><h4 class="font-bold text-slate-800">${d.shopName}</h4><p class="text-xs text-gray-400">${d.phone} | ${d.wilaya || ''}</p></div>
-                            <div class="flex gap-2">
-                                <button onclick="window.adminAction('verify', '${id}')" class="bg-green-100 text-green-700 px-3 py-1.5 rounded-xl text-xs font-bold">قبول</button>
-                                <button onclick="window.adminAction('delete', '${id}')" class="bg-red-50 text-red-500 px-3 py-1.5 rounded-xl text-xs font-bold">رفض</button>
+                        <div class="bg-white p-4 rounded-2xl border border-yellow-100 shadow-sm flex justify-between items-start mb-2">
+                            <div>
+                                <h4 class="font-bold text-slate-800">${shopName}</h4>
+                                <p class="text-xs text-gray-400 mt-0.5 dir-ltr text-right">${phone}</p>
+                                <p class="text-[10px] text-gray-400">${wilaya}</p>
+                                ${gpsBtn}
+                            </div>
+                            <div class="flex flex-col gap-2 mt-1">
+                                <button onclick="window.adminAction('verify', '${id}')" class="bg-green-100 text-green-700 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-green-200 transition">قبول ✅</button>
+                                <button onclick="window.adminAction('delete', '${id}')" class="bg-red-50 text-red-500 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-red-100 transition">رفض ❌</button>
                             </div>
                         </div>`;
                 } else if (type === 'sellers') {
-                    // *** هنا تم التعديل لإضافة زر الحذف بجانب زر الحظر ***
+                    // قائمة النشطين
                     const rating = d.rating ? parseFloat(d.rating).toFixed(1) : "0.0";
                     const count = d.reviewCount || 0;
                     list.innerHTML += `
-                        <div onclick="window.openPharmaDetails('${id}')" class="${d.isBlocked ? 'bg-red-50' : 'bg-white'} p-4 rounded-2xl border border-blue-50 shadow-sm mb-2 cursor-pointer hover:shadow-md transition group relative">
+                        <div onclick="window.openPharmaDetails('${id}')" class="${d.isBlocked ? 'bg-red-50 border-red-100' : 'bg-white border-blue-50'} p-4 rounded-2xl border shadow-sm mb-2 cursor-pointer hover:shadow-md transition group relative">
                             <div class="flex justify-between items-start mb-2">
-                                <div><h4 class="font-bold text-slate-800 text-lg group-hover:text-blue-600 transition">${d.shopName}</h4><p class="text-xs text-gray-400 font-mono">${d.phone}</p></div>
-                                <div class="text-center bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-100"><span class="block text-yellow-500 font-black text-sm">★ ${rating}</span><span class="text-[9px] text-gray-400">(${count})</span></div>
+                                <div>
+                                    <h4 class="font-bold text-slate-800 text-lg group-hover:text-blue-600 transition">${shopName}</h4>
+                                    <p class="text-xs text-gray-400 font-mono">${phone}</p>
+                                    ${gpsBtn}
+                                </div>
+                                <div class="text-center bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-100">
+                                    <span class="block text-yellow-500 font-black text-sm">★ ${rating}</span>
+                                    <span class="text-[9px] text-gray-400">(${count})</span>
+                                </div>
                             </div>
                             
                             <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-50">
@@ -296,10 +333,17 @@
                             </div>
                         </div>`;
                 } else if (type === 'orders') {
+                    // الطلبات
+                    const medName = d.medicineName || d.medName || "دواء غير محدد";
+                    const statusText = d.status === 'accepted' ? 'تم القبول' : (d.status === 'pending' ? 'قيد الانتظار' : 'نشط');
                     list.innerHTML += `
                         <div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm mb-2 flex justify-between items-center">
-                            <div><h4 class="font-bold text-slate-800">${d.medName}</h4><p class="text-xs text-gray-400">${d.phoneNumber}</p></div>
-                            <button onclick="window.adminAction('deleteReq', '${id}')" class="text-red-400 hover:bg-red-50 p-2 rounded-lg">🗑️</button>
+                            <div>
+                                <h4 class="font-bold text-slate-800">${medName}</h4>
+                                <p class="text-xs text-gray-400 font-mono">${d.phoneNumber || '---'}</p>
+                                <span class="text-[9px] bg-gray-100 px-2 rounded text-gray-500">${statusText}</span>
+                            </div>
+                            <button onclick="window.adminAction('deleteReq', '${id}')" class="text-red-400 hover:bg-red-50 p-2 rounded-lg transition">🗑️</button>
                         </div>`;
                 }
             });
@@ -311,20 +355,35 @@
             updateUI('orders', state.orders);
         });
 
+        // دوال النافذة (Global)
         window.adminAction = async (action, id, status = false) => {
             try {
-                if(action === 'verify') if(confirm("تفعيل؟")) await updateDoc(doc(db, "pharmacists", id), { isVerified: true });
-                if(action === 'delete') if(confirm("تحذير: سيتم حذف الحساب وجميع بياناته نهائياً. هل أنت متأكد؟")) {
-                    const q = query(collection(db, "responses"), where("pharmaId", "==", id));
-                    const snap = await getDocs(q);
-                    const batch = writeBatch(db);
-                    snap.forEach(d => batch.delete(d.ref));
-                    batch.delete(doc(db, "pharmacists", id));
-                    await batch.commit();
+                // قبول الصيدلي
+                if(action === 'verify') {
+                    if(confirm("هل أنت متأكد من تفعيل حساب الصيدلي؟")) {
+                        await updateDoc(doc(db, "pharmacists", id), { isVerified: true });
+                    }
                 }
-                if(action === 'toggleBlock') await updateDoc(doc(db, "pharmacists", id), { isBlocked: !status });
-                if(action === 'deleteReq') if(confirm("حذف الطلب؟")) await deleteDoc(doc(db, "requests", id));
-            } catch(e) { console.error(e); alert("خطأ"); }
+                // حذف الصيدلي
+                if(action === 'delete') {
+                    if(confirm("تحذير: سيتم حذف الحساب وجميع بياناته نهائياً. هل أنت متأكد؟")) {
+                        const q = query(collection(db, "responses"), where("pharmaId", "==", id));
+                        const snap = await getDocs(q);
+                        const batch = writeBatch(db);
+                        snap.forEach(d => batch.delete(d.ref));
+                        batch.delete(doc(db, "pharmacists", id));
+                        await batch.commit();
+                    }
+                }
+                // حظر/فك حظر
+                if(action === 'toggleBlock') {
+                    await updateDoc(doc(db, "pharmacists", id), { isBlocked: !status });
+                }
+                // حذف طلب دواء
+                if(action === 'deleteReq') {
+                    if(confirm("حذف الطلب؟")) await deleteDoc(doc(db, "requests", id));
+                }
+            } catch(e) { console.error(e); alert("حدث خطأ أثناء تنفيذ العملية"); }
         };
 
         window.openPharmaDetails = async (id) => {
