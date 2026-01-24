@@ -1007,28 +1007,41 @@ async function initPharmaDashboard(uid) {
         const ph = document.getElementById('editPhone').value;
         if(ph) { await updateDoc(doc(db, "pharmacists", currentPharmaId), { phone: ph }); alert("تم تحديث الهاتف"); }
     };
-}
-
-// ============================================================
-// 7. منطق الأدمن (ADMIN)
+}// ============================================================
+// 7. منطق الأدمن (ADMIN) - نسخة محسنة لحفظ الدخول
 // ============================================================
 if (document.getElementById('adminDashboard') || document.getElementById('adminLoginScreen')) {
     const adminEmailReal = "david_hassan5@hotmail.com";
     
+    // التحقق الفوري من المتصفح لتجنب وميض صفحة الدخول
+    if (localStorage.getItem('adminLoggedIn') === 'true') {
+        safeToggle('adminLoginScreen', 'hide');
+        safeToggle('adminDashboard', 'show');
+        document.getElementById('adminDashboard').style.display = 'flex';
+    }
+
     onAuthStateChanged(auth, (user) => {
         if(user && user.email === adminEmailReal) {
-            safeToggle('adminLoginScreen', 'hide'); safeToggle('adminDashboard', 'show');
+            localStorage.setItem('adminLoggedIn', 'true'); // حفظ حالة الدخول
+            safeToggle('adminLoginScreen', 'hide'); 
+            safeToggle('adminDashboard', 'show');
             document.getElementById('adminDashboard').style.display = 'flex';
             startAdminLogic();
         } else {
-            safeToggle('adminLoginScreen', 'show'); safeToggle('adminDashboard', 'hide');
+            localStorage.removeItem('adminLoggedIn'); // مسح حالة الدخول
+            safeToggle('adminLoginScreen', 'show'); 
+            safeToggle('adminDashboard', 'hide');
             document.getElementById('adminDashboard').style.display = 'none';
         }
     });
 
     const abtn = document.getElementById('btnAdminLogin');
     if(abtn) abtn.addEventListener('click', async () => {
-        try { await signInWithEmailAndPassword(auth, document.getElementById('adminEmail').value, document.getElementById('adminPass').value); }
+        try { 
+            const email = document.getElementById('adminEmail').value;
+            const pass = document.getElementById('adminPass').value;
+            await signInWithEmailAndPassword(auth, email, pass); 
+        }
         catch(e) { alert("خطأ في بيانات الأدمن"); }
     });
 
@@ -1077,13 +1090,18 @@ if (document.getElementById('adminDashboard') || document.getElementById('adminL
             await logAction('admin_block', `Pharmacist ${id} blocked status: ${!status}`);
         }
         if(act === 'deleteReq') {
-            await deleteDoc(doc(db, "requests", id));
-            await logAction('admin_delete_req', `Request ${id} deleted`);
+            if(confirm("حذف الطلب؟")) {
+                await deleteDoc(doc(db, "requests", id));
+                await logAction('admin_delete_req', `Request ${id} deleted`);
+            }
         }
     };
     
     const btnLogout = document.getElementById('btnLogout');
     if(btnLogout) {
-        btnLogout.addEventListener('click', ()=> signOut(auth));
+        btnLogout.addEventListener('click', async () => {
+            localStorage.removeItem('adminLoggedIn'); // مسح التوكن عند الخروج
+            await signOut(auth);
+        });
     }
 }
